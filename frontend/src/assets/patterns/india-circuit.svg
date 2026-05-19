@@ -1,0 +1,21 @@
+<!-- /media/yagaven_25/coding/Projects/codeNames/src/assets/patterns/india-circuit.svg -->
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="360" viewBox="0 0 520 360" role="img" aria-label="India inspired circuit pattern">
+  <rect width="520" height="360" rx="34" fill="#0A0A14"/>
+  <g fill="none" stroke="#FF9933" stroke-opacity="0.38" stroke-width="2">
+    <path d="M56 72h120v46h88v74h96"/>
+    <path d="M82 258h92v-62h72v-54h166"/>
+    <path d="M134 118v92h-48"/>
+    <path d="M360 90v62h86"/>
+    <path d="M300 248h112v44"/>
+  </g>
+  <g fill="#10B981" fill-opacity="0.8">
+    <circle cx="56" cy="72" r="7"/>
+    <circle cx="264" cy="118" r="7"/>
+    <circle cx="360" cy="192" r="7"/>
+    <circle cx="82" cy="258" r="7"/>
+    <circle cx="246" cy="142" r="7"/>
+    <circle cx="446" cy="152" r="7"/>
+    <circle cx="412" cy="292" r="7"/>
+  </g>
+  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#FFF7E6" fill-opacity="0.16" font-size="88" font-family="Rajdhani, sans-serif" font-weight="700">INDIA</text>
+</svg>

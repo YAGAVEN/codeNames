@@ -1,0 +1,25 @@
+<!-- /media/yagaven_25/coding/Projects/codeNames/src/assets/patterns/rangoli-mandala.svg -->
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="420" viewBox="0 0 420 420" role="img" aria-label="Rangoli mandala pattern">
+  <defs>
+    <radialGradient id="rangoliGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF9933" stop-opacity="0.85"/>
+      <stop offset="46%" stop-color="#F59E0B" stop-opacity="0.34"/>
+      <stop offset="100%" stop-color="#10B981" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="420" height="420" fill="none"/>
+  <circle cx="210" cy="210" r="178" fill="url(#rangoliGlow)"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="210" cy="210" r="42" stroke="#FFF7E6" stroke-opacity="0.64" stroke-width="4"/>
+    <circle cx="210" cy="210" r="94" stroke="#FF9933" stroke-opacity="0.72" stroke-width="3" stroke-dasharray="12 14"/>
+    <circle cx="210" cy="210" r="136" stroke="#10B981" stroke-opacity="0.56" stroke-width="3" stroke-dasharray="6 16"/>
+    <path d="M210 48 C238 104 238 156 210 210 C182 156 182 104 210 48Z" stroke="#F59E0B" stroke-opacity="0.9" stroke-width="4"/>
+    <path d="M210 372 C182 316 182 264 210 210 C238 264 238 316 210 372Z" stroke="#F59E0B" stroke-opacity="0.9" stroke-width="4"/>
+    <path d="M48 210 C104 182 156 182 210 210 C156 238 104 238 48 210Z" stroke="#FF9933" stroke-opacity="0.9" stroke-width="4"/>
+    <path d="M372 210 C316 238 264 238 210 210 C264 182 316 182 372 210Z" stroke="#FF9933" stroke-opacity="0.9" stroke-width="4"/>
+    <path d="M96 96 C156 106 190 146 210 210 C146 190 106 156 96 96Z" stroke="#10B981" stroke-opacity="0.8" stroke-width="4"/>
+    <path d="M324 324 C264 314 230 274 210 210 C274 230 314 264 324 324Z" stroke="#10B981" stroke-opacity="0.8" stroke-width="4"/>
+    <path d="M324 96 C314 156 274 190 210 210 C230 146 264 106 324 96Z" stroke="#FFF7E6" stroke-opacity="0.55" stroke-width="4"/>
+    <path d="M96 324 C106 264 146 230 210 210 C190 274 156 314 96 324Z" stroke="#FFF7E6" stroke-opacity="0.55" stroke-width="4"/>
+  </g>
+</svg>

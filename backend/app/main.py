@@ -1,0 +1,94 @@
+# backend/app/main.py
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+from fastapi import FastAPI, Request, WebSocket
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import ORJSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+from app.api.routes import admin, auth, friends, matches, rooms, users
+from app.core.config import get_settings
+from app.core.events import shutdown, startup
+from app.middleware.auth import OptionalAuthMiddleware
+from app.middleware.cors import setup_cors
+from app.middleware.logging import RequestLoggingMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.utils.exceptions import AppError
+from app.utils.logging import configure_logging
+from app.utils.responses import error_response, success_response
+from app.websocket.room_events import websocket_endpoint
+
+settings = get_settings()
+
+configure_logging(settings.LOG_LEVEL)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Run async startup/shutdown hooks for Redis and pub/sub."""
+    await startup(app)
+    try:
+        yield
+    finally:
+        await shutdown(app)
+
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version="1.0.0",
+    default_response_class=ORJSONResponse,
+    lifespan=lifespan,
+)
+
+setup_cors(app, settings)
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(OptionalAuthMiddleware)
+app.add_middleware(RateLimitMiddleware, settings=settings)
+
+app.include_router(auth.router, prefix=f"{settings.API_PREFIX}/auth", tags=["auth"])
+app.include_router(rooms.router, prefix=f"{settings.API_PREFIX}/rooms", tags=["rooms"])
+app.include_router(users.router, prefix=f"{settings.API_PREFIX}/users", tags=["users"])
+app.include_router(friends.router, prefix=f"{settings.API_PREFIX}/friends", tags=["friends"])
+app.include_router(matches.router, prefix=f"{settings.API_PREFIX}/matches", tags=["matches"])
+app.include_router(admin.router, prefix=f"{settings.API_PREFIX}/admin", tags=["admin"])
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError) -> ORJSONResponse:
+    """Return expected application errors in envelope form."""
+    return ORJSONResponse(
+        status_code=exc.status_code,
+        content=error_response(exc.code, exc.message, {"request_id": getattr(request.state, "request_id", None)}),
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> ORJSONResponse:
+    """Return validation errors without leaking stack traces."""
+    return ORJSONResponse(
+        status_code=422,
+        content=error_response(
+            "validation_error",
+            "Request validation failed",
+            {"details": exc.errors(), "request_id": getattr(request.state, "request_id", None)},
+        ),
+    )
+
+
+@app.get("/health", summary="Health check")
+async def health() -> dict[str, object]:
+    """Return API liveness information."""
+    return success_response({"status": "ok", "env": settings.APP_ENV})
+
+
+@app.get("/metrics", summary="Prometheus metrics")
+async def metrics() -> Response:
+    """Expose Prometheus metrics for scraping."""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.websocket("/ws/{room_id}")
+async def websocket_route(websocket: WebSocket, room_id: str) -> None:
+    """Authenticate and delegate room WebSocket traffic."""
+    await websocket_endpoint(websocket, room_id)
