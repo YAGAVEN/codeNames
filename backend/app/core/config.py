@@ -1,9 +1,9 @@
 # backend/app/core/config.py
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import AnyHttpUrl, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from supabase import Client, create_client
 
 
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     PASSWORD_RESET_TOKEN_MINUTES: int = 30
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
+    ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     DATABASE_URL: str
     TEST_DATABASE_URL: str = "sqlite+aiosqlite:///:memory:"
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_KEY: str | None = None
     SUPABASE_JWT_SECRET: str | None = None
     SUPABASE_REDIRECT_URL: str = "http://localhost:8000/api/auth/google/callback"
+    FRONTEND_URL: str = "http://localhost:5173"
     AVATARS_BUCKET: str = "avatars"
     WORD_PACKS_BUCKET: str = "word_packs"
     COOKIE_SECURE: bool = True
@@ -73,6 +74,8 @@ def get_settings() -> Settings:
 def get_supabase_admin_client() -> Client | None:
     """Create a Supabase service-role client when credentials are configured."""
     settings = get_settings()
+    if settings.APP_ENV == "test":
+        return None
     if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
         # TODO: Configure SUPABASE_URL and SUPABASE_SERVICE_KEY in production.
         return None
@@ -83,6 +86,8 @@ def get_supabase_admin_client() -> Client | None:
 def get_supabase_anon_client() -> Client | None:
     """Create an anon Supabase client for OAuth redirect and public auth calls."""
     settings = get_settings()
+    if settings.APP_ENV == "test":
+        return None
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
         # TODO: Configure SUPABASE_URL and SUPABASE_ANON_KEY in production.
         return None

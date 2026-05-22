@@ -4,19 +4,26 @@ import { Link } from 'react-router-dom';
 import { MailCheck, Send } from 'lucide-react';
 import { Button } from '../components/ui/Button.jsx';
 import { Badge } from '../components/ui/Badge.jsx';
+import { useToast } from '../components/ui/Toast.jsx';
 import { requestPasswordReset } from '../services/api.js';
 
 const ForgotPasswordPage = () => {
-  const [email, setEmail] = useState('anaya@codenames.in');
+  const { showToast } = useToast();
+  const [email, setEmail] = useState('');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
   const submit = async (event) => {
     event.preventDefault();
     setLoading(true);
-    await requestPasswordReset(email);
-    setLoading(false);
-    setStep(2);
+    try {
+      await requestPasswordReset(email);
+      setStep(2);
+    } catch (error) {
+      showToast({ type: 'error', title: 'Reset failed', message: error.message });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

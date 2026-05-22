@@ -29,6 +29,7 @@ ServerEventName = Literal[
     "turn_changed",
     "clue_received",
     "board_updated",
+    "spymaster_board_updated",
     "card_revealed",
     "score_updated",
     "game_over",

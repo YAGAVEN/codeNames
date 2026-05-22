@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/shared/ErrorBoundary.jsx';
 import { AuthLayout } from './layouts/AuthLayout.jsx';
 import { GameLayout } from './layouts/GameLayout.jsx';
 import { MainLayout } from './layouts/MainLayout.jsx';
+import AuthCallbackPage from './pages/AuthCallbackPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx';
 import GamePage from './pages/GamePage.jsx';
@@ -69,6 +70,14 @@ export const App = () => {
                 element={
                   <PageFrame>
                     <ForgotPasswordPage />
+                  </PageFrame>
+                }
+              />
+              <Route
+                path="/auth/callback"
+                element={
+                  <PageFrame>
+                    <AuthCallbackPage />
                   </PageFrame>
                 }
               />

@@ -1,15 +1,33 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/pages/ProfilePage.jsx
+import { useEffect, useState } from 'react';
 import { Edit3, History, Medal, UsersRound } from 'lucide-react';
 import { Button } from '../components/ui/Button.jsx';
 import { Badge } from '../components/ui/Badge.jsx';
 import { PlayerAvatar } from '../components/lobby/PlayerAvatar.jsx';
 import { useAuth } from '../hooks/useAuth.js';
-import { mockPlayers } from '../data/mockPlayers.js';
+import { fetchDashboard } from '../services/api.js';
 import { formatNumber, relativeTime } from '../utils/helpers.js';
 
 const ProfilePage = () => {
-  const { user } = useAuth();
-  const friends = mockPlayers.filter((player) => player.id !== user.id).slice(0, 6);
+  const { user: authUser } = useAuth();
+  const [dashboard, setDashboard] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchDashboard().then((data) => {
+      if (active) {
+        setDashboard(data);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const user = dashboard?.currentUser || authUser;
+  const friends = dashboard?.friends || [];
+  const badges = user?.badges || [];
+  const matchHistory = user?.matchHistory || [];
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_22rem]">
@@ -18,21 +36,23 @@ const ProfilePage = () => {
           <div className="flex items-center gap-4">
             <PlayerAvatar player={user} size="lg" />
             <div>
-              <Badge tone="saffron">Level {user.level}</Badge>
-              <h1 className="mt-2 font-heading text-4xl font-bold text-cream light:text-slate-900">{user.name}</h1>
-              <p className="text-cream/65 light:text-slate-600">{user.handle} • {user.city}</p>
+              <Badge tone="saffron">Level {user?.level ?? 0}</Badge>
+              <h1 className="mt-2 font-heading text-4xl font-bold text-cream light:text-slate-900">{user?.name || 'Player'}</h1>
+              <p className="text-cream/65 light:text-slate-600">
+                {user?.handle || '—'} {user?.city ? `• ${user.city}` : ''}
+              </p>
             </div>
           </div>
-          <Button variant="secondary" icon={Edit3} aria-label="Edit profile mock">
+          <Button variant="secondary" icon={Edit3} aria-label="Edit profile">
             Edit Profile
           </Button>
         </div>
         <div className="mt-6 grid gap-3 sm:grid-cols-4">
           {[
-            ['XP', formatNumber(user.xp)],
-            ['Win Rate', `${user.winRate}%`],
-            ['Streak', user.streak],
-            ['Badges', user.badges.length]
+            ['XP', formatNumber(user?.xp ?? 0)],
+            ['Win Rate', `${user?.winRate ?? 0}%`],
+            ['Streak', user?.streak ?? 0],
+            ['Badges', badges.length]
           ].map(([label, value]) => (
             <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
               <p className="font-heading text-3xl font-bold text-cream light:text-slate-900">{value}</p>
@@ -67,14 +87,18 @@ const ProfilePage = () => {
           <h2 className="font-heading text-3xl font-bold text-cream light:text-slate-900">Badge Showcase</h2>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {user.badges.map((badge) => (
+          {badges.length ? badges.map((badge) => (
             <article key={badge.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
               <span className="text-3xl" aria-hidden="true">{badge.icon}</span>
               <h3 className="mt-2 font-heading text-xl font-bold text-cream light:text-slate-900">{badge.name}</h3>
               <p className="text-sm text-cream/55 light:text-slate-500">{badge.description}</p>
               <Badge className="mt-3" tone="saffron">{badge.rarity}</Badge>
             </article>
-          ))}
+          )) : (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-cream/60 light:text-slate-600 sm:col-span-2 lg:col-span-3">
+              Badges will appear after they are unlocked by completed matches.
+            </div>
+          )}
         </div>
       </section>
 
@@ -96,7 +120,7 @@ const ProfilePage = () => {
               </tr>
             </thead>
             <tbody>
-              {user.matchHistory.map((match) => (
+              {matchHistory.length ? matchHistory.map((match) => (
                 <tr key={match.id} className="border-t border-white/10">
                   <td className="py-3 font-semibold text-cream light:text-slate-900">{match.room}</td>
                   <td><Badge tone={match.result === 'Win' ? 'emerald' : 'red'}>{match.result}</Badge></td>
@@ -105,7 +129,13 @@ const ProfilePage = () => {
                   <td className="text-cream/70 light:text-slate-600">{match.score}</td>
                   <td className="text-cream/50 light:text-slate-500">{relativeTime(match.playedAt)}</td>
                 </tr>
-              ))}
+              )) : (
+                <tr className="border-t border-white/10">
+                  <td className="py-4 text-cream/60 light:text-slate-600" colSpan={6}>
+                    No saved match history yet.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

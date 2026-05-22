@@ -26,7 +26,7 @@ export const ErrorBoundary = ({ children }) => {
           <AlertTriangle className="mx-auto h-10 w-10 text-gold" aria-hidden="true" />
           <h1 className="mt-4 font-heading text-3xl font-bold text-cream light:text-slate-900">Game Room Error</h1>
           <p className="mt-2 text-sm text-cream/70 light:text-slate-600">
-            Something interrupted this room session. Reset the view and the mock game state will keep running.
+            Something interrupted this room session. Reset the view to reconnect and try again.
           </p>
           <Button className="mt-5" onClick={() => setError(null)}>
             Reset view

@@ -8,13 +8,15 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-os.environ.setdefault("APP_ENV", "test")
-os.environ.setdefault("SECRET_KEY", "test-secret-key-with-at-least-thirty-two-chars")
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
-os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6379/15")
-os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6379/15")
-os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ["APP_ENV"] = "test"
+os.environ["DEBUG"] = "false"
+os.environ["SECRET_KEY"] = "test-secret-key-with-at-least-thirty-two-chars"
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+os.environ["REDIS_URL"] = "redis://localhost:6379/15"
+os.environ["CELERY_BROKER_URL"] = "redis://localhost:6379/15"
+os.environ["CELERY_RESULT_BACKEND"] = "redis://localhost:6379/15"
+os.environ["COOKIE_SECURE"] = "false"
+os.environ["ALLOWED_ORIGINS"] = "http://test"
 
 from app.api.dependencies.db_deps import get_db
 from app.core.config import get_settings

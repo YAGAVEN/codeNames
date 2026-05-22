@@ -49,6 +49,12 @@ async def public_rooms(page: int = 1, per_page: int = 20, db: AsyncSession = Dep
     return success_response(rooms, {"page": page, "per_page": per_page})
 
 
+@router.get("/code/{room_code}", response_model=EnvelopeSchema[RoomRead], summary="Get room by code")
+async def get_room_by_code(room_code: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Return room details by public room code."""
+    return success_response(await RoomService(db).describe_room_by_code(room_code.upper()))
+
+
 @router.get("/{room_id}", response_model=EnvelopeSchema[RoomRead], summary="Get room")
 async def get_room(room_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
     """Return room details."""

@@ -5,7 +5,7 @@ import { SOCKET_EVENTS, useSocket as useSocketLifecycle } from '../services/sock
 const SocketContext = createContext(null);
 
 export const SocketProvider = ({ children }) => {
-  const [roomCode, setRoomCode] = useState('IND-2048');
+  const [roomCode, setRoomCode] = useState('');
   const socketState = useSocketLifecycle(roomCode);
 
   const value = useMemo(

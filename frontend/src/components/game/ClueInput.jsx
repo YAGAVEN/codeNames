@@ -11,8 +11,8 @@ import { SOCKET_EVENTS } from '../../services/socket.js';
 
 export const ClueInput = ({ compact = false }) => {
   const { user } = useAuth();
-  const { board, giveClue } = useGame();
-  const { emit } = useSocket();
+  const { board } = useGame();
+  const { emit, connected } = useSocket();
   const { showToast } = useToast();
   const [word, setWord] = useState('');
   const [count, setCount] = useState(2);
@@ -26,14 +26,26 @@ export const ClueInput = ({ compact = false }) => {
       showToast({ type: 'warning', title: 'Clue needs a tweak', message: error });
       return;
     }
+    if (!user?.id) {
+      showToast({ type: 'warning', title: 'Sign in to clue', message: 'Log in to send spymaster clues.' });
+      return;
+    }
+    if (!connected) {
+      showToast({ type: 'warning', title: 'Socket offline', message: 'Reconnect to send clues.' });
+      return;
+    }
 
     setLoading(true);
     const clue = { word: word.trim(), count: Number(count), from: user };
-    giveClue(clue);
-    await emit(SOCKET_EVENTS.GIVE_CLUE, { clue });
-    setLoading(false);
-    setWord('');
-    showToast({ type: 'success', title: 'Clue sent', message: `${clue.word} for ${clue.count}` });
+    try {
+      await emit(SOCKET_EVENTS.GIVE_CLUE, { clue });
+      setWord('');
+      showToast({ type: 'success', title: 'Clue sent', message: `${clue.word} for ${clue.count}` });
+    } catch (sendError) {
+      showToast({ type: 'error', title: 'Clue failed', message: sendError.message });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -48,6 +60,7 @@ export const ClueInput = ({ compact = false }) => {
           onChange={(event) => setWord(event.target.value)}
           aria-label="Clue word"
           placeholder="e.g. Monsoon"
+          disabled={!user?.id || !connected}
           className="rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-cream outline-none placeholder:text-cream/35 focus:border-saffron/60 light:text-slate-900 light:placeholder:text-slate-400"
         />
         <input
@@ -57,9 +70,10 @@ export const ClueInput = ({ compact = false }) => {
           type="number"
           min="1"
           max="9"
+          disabled={!user?.id || !connected}
           className="rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-cream outline-none focus:border-saffron/60 light:text-slate-900"
         />
-        <Button type="submit" loading={loading} icon={Send} aria-label="Send spymaster clue">
+        <Button type="submit" loading={loading} icon={Send} aria-label="Send spymaster clue" disabled={!user?.id || !connected}>
           Send
         </Button>
       </div>

@@ -10,15 +10,27 @@ import circuitPattern from '../assets/patterns/india-circuit.svg';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { login, status } = useAuth();
+  const { login, loginWithGoogle, status } = useAuth();
   const { showToast } = useToast();
-  const [form, setForm] = useState({ email: 'anaya@codenames.in', password: 'spymaster' });
+  const [form, setForm] = useState({ email: '', password: '' });
 
   const submit = async (event) => {
     event.preventDefault();
-    await login(form);
-    showToast({ type: 'success', title: 'Welcome back', message: 'Your Diwali streak is waiting.' });
-    navigate('/dashboard');
+    try {
+      await login(form);
+      showToast({ type: 'success', title: 'Welcome back', message: 'Your Diwali streak is waiting.' });
+      navigate('/dashboard');
+    } catch (error) {
+      showToast({ type: 'error', title: 'Login failed', message: error.message });
+    }
+  };
+
+  const continueWithGoogle = async () => {
+    try {
+      await loginWithGoogle();
+    } catch (error) {
+      showToast({ type: 'error', title: 'Google login failed', message: error.message });
+    }
   };
 
   return (
@@ -26,7 +38,7 @@ const LoginPage = () => {
       <img src={circuitPattern} alt="" aria-hidden="true" className="mb-5 h-28 w-full rounded-xl object-cover opacity-80" />
       <Badge tone="emerald">
         <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-        Secure mock session
+        Secure session
       </Badge>
       <h1 className="mt-4 font-heading text-4xl font-bold text-cream light:text-slate-900">Login</h1>
       <p className="mt-1 text-sm text-cream/65 light:text-slate-600">Resume your room, ranked climb, and festival rewards.</p>
@@ -68,12 +80,9 @@ const LoginPage = () => {
         </Button>
       </form>
 
-      <div className="mt-5 grid gap-2 sm:grid-cols-2">
-        <Button variant="secondary" icon={Chrome} aria-label="Continue with Google">
+      <div className="mt-5">
+        <Button className="w-full" variant="secondary" icon={Chrome} onClick={continueWithGoogle} loading={status === 'loading'} aria-label="Continue with Google">
           Google
-        </Button>
-        <Button variant="secondary" aria-label="Continue with phone OTP">
-          Phone OTP
         </Button>
       </div>
       <p className="mt-5 text-center text-sm text-cream/60 light:text-slate-600">

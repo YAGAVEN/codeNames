@@ -1,35 +1,21 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/pages/LeaderboardPage.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Filter, Flame, Trophy } from 'lucide-react';
-import { Button } from '../components/ui/Button.jsx';
 import { Badge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/shared/Skeleton.jsx';
 import { fetchLeaderboard } from '../services/api.js';
 import { formatNumber } from '../utils/helpers.js';
 
-const filters = ['Global', 'Friends', 'This Week'];
-
 const LeaderboardPage = () => {
   const [entries, setEntries] = useState([]);
-  const [filter, setFilter] = useState('Global');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchLeaderboard().then((data) => {
       setEntries(data);
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
   }, []);
-
-  const visibleEntries = useMemo(() => {
-    if (filter === 'Friends') {
-      return entries.filter((entry) => entry.rank % 2 === 0);
-    }
-    if (filter === 'This Week') {
-      return entries.filter((entry) => entry.streak >= 3);
-    }
-    return entries;
-  }, [entries, filter]);
 
   if (loading) {
     return <Skeleton className="h-[38rem]" />;
@@ -47,26 +33,19 @@ const LeaderboardPage = () => {
             <h1 className="mt-3 font-heading text-4xl font-bold text-cream light:text-slate-900">Leaderboard</h1>
             <p className="text-cream/65 light:text-slate-600">Global, friends, streaks, XP, badges, and country ranks.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {filters.map((item) => (
-              <Button key={item} variant={filter === item ? 'primary' : 'secondary'} onClick={() => setFilter(item)} aria-label={`Filter leaderboard by ${item}`}>
-                {item}
-              </Button>
-            ))}
-          </div>
         </div>
       </section>
 
       <section className="glass-panel rounded-2xl p-4 sm:p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="font-heading text-3xl font-bold text-cream light:text-slate-900">{filter} Rankings</h2>
+          <h2 className="font-heading text-3xl font-bold text-cream light:text-slate-900">Global Rankings</h2>
           <Badge tone="emerald">
             <Filter className="h-3.5 w-3.5" aria-hidden="true" />
-            {visibleEntries.length} players
+            {entries.length} players
           </Badge>
         </div>
         <div className="space-y-2">
-          {visibleEntries.map((entry) => (
+          {entries.length ? entries.map((entry) => (
             <article
               key={entry.id}
               className={`grid grid-cols-[3.5rem_1fr_auto] items-center gap-3 rounded-xl border p-3 ${
@@ -88,7 +67,11 @@ const LeaderboardPage = () => {
                 </p>
               </div>
             </article>
-          ))}
+          )) : (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-cream/60 light:text-slate-600">
+              No ranked players yet.
+            </div>
+          )}
         </div>
       </section>
     </div>

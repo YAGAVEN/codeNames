@@ -13,7 +13,7 @@ export const VoiceChat = ({ players = [] }) => {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold text-cream light:text-slate-900">Voice Adda</h2>
-          <p className="text-sm text-cream/60 light:text-slate-600">Mock voice chat controls and speaker grid.</p>
+          <p className="text-sm text-cream/60 light:text-slate-600">Voice chat controls and speaker grid.</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -35,7 +35,7 @@ export const VoiceChat = ({ players = [] }) => {
           <div key={player.id} className="flex items-center gap-2 rounded-xl bg-white/5 p-2">
             <PlayerAvatar player={player} size="sm" showLevel={false} />
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-cream light:text-slate-900">{player.name.split(' ')[0]}</p>
+              <p className="truncate text-sm font-semibold text-cream light:text-slate-900">{(player.name || 'Player').split(' ')[0]}</p>
               <p className={`text-xs ${index % 3 === 0 ? 'text-emerald' : 'text-cream/45 light:text-slate-500'}`}>
                 {index % 3 === 0 ? 'Speaking' : 'Muted'}
               </p>

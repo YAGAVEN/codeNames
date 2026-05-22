@@ -2,6 +2,6 @@
 import { useSocketContext } from '../context/SocketContext.jsx';
 
 /**
- * Provides global mock Socket.io connection state and emit helpers.
+ * Provides global Socket.io connection state and emit helpers.
  */
 export const useSocket = () => useSocketContext();

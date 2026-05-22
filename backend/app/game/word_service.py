@@ -1,7 +1,6 @@
 # backend/app/game/word_service.py
 import asyncio
 import json
-from collections.abc import Sequence
 from typing import Any
 
 from redis.asyncio import Redis
@@ -10,57 +9,27 @@ from app.core.config import Settings, get_supabase_admin_client
 from app.utils.exceptions import NotFoundError
 
 
-def _pad_words(base: Sequence[str], prefix: str) -> list[str]:
-    """Pad curated seed words to the required 100-word minimum per category."""
-    words = list(dict.fromkeys(base))
-    index = 1
-    while len(words) < 100:
-        words.append(f"{prefix} {index}")
-        index += 1
-    return words
-
+DEFAULT_WORDS = [
+    "Sholay", "Dangal", "DDLJ", "Jawan", "Lagaan", "Pathaan", "Gully Boy", "Kantara", "Baahubali", "Amitabh",
+    "Sachin", "Dhoni", "Kohli", "Wankhede", "Eden", "IPL", "Googly", "Yorker", "Century", "Ranji",
+    "Biryani", "Dosa", "Chole", "Vada Pav", "Rasgulla", "Jalebi", "Thali", "Idli", "Paneer", "Chai",
+    "Mumbai", "Delhi", "Bengaluru", "Kolkata", "Chennai", "Hyderabad", "Jaipur", "Kochi", "Ahmedabad", "Pune",
+    "Diwali", "Holi", "Eid", "Pongal", "Onam", "Navratri", "Baisakhi", "Lohri", "Durga Puja", "Ganesh",
+    "Krishna", "Arjuna", "Hanuman", "Ravana", "Ganga", "Ayodhya", "Kurukshetra", "Lakshmi", "Shiva", "Saraswati",
+    "Sansad", "Rajya Sabha", "Lok Sabha", "Rashtrapati", "Panchayat", "Election", "Manifesto", "Constitution", "Governor", "Cabinet",
+    "UPI", "Aadhaar", "ISRO", "Infosys", "Flipkart", "Zomato", "Paytm", "Ola", "Namma Yatri", "Chandrayaan",
+    "Hindi", "Tamil", "Bengali", "Marathi", "Telugu", "Kannada", "Malayalam", "Punjabi", "Gujarati", "Urdu",
+    "Ashoka", "Akbar", "Mughal", "Harappa", "Nalanda", "Dandi", "Swaraj", "Jallianwala", "Vedas", "Quit India",
+]
 
 DEFAULT_WORD_PACKS: dict[str, list[str]] = {
-    "bollywood": _pad_words(
-        ["Dangal", "Sholay", "Lagaan", "Pathaan", "Khan", "Kapoor", "Cinema", "Director", "Song", "Dance", "Mumbai", "Studio", "Hero", "Villain", "Interval"],
-        "Bollywood",
-    ),
-    "cricket": _pad_words(
-        ["Sachin", "Dhoni", "Kohli", "Wicket", "Pitch", "Stadium", "Chennai", "Yorker", "Spinner", "Boundary", "IPL", "Ranji", "Captain", "Umpire", "Bouncer"],
-        "Cricket",
-    ),
-    "festivals": _pad_words(
-        ["Diwali", "Holi", "Eid", "Pongal", "Onam", "Baisakhi", "Navratri", "Rangoli", "Lantern", "Laddu", "Dhol", "Garba", "Puja", "Mela", "Kite"],
-        "Festival",
-    ),
-    "cities": _pad_words(
-        ["Delhi", "Mumbai", "Kolkata", "Chennai", "Bengaluru", "Hyderabad", "Pune", "Jaipur", "Lucknow", "Kochi", "Surat", "Indore", "Bhopal", "Patna", "Goa"],
-        "City",
-    ),
-    "food": _pad_words(
-        ["Biryani", "Dosa", "Idli", "Samosa", "Chaat", "Vada", "Paneer", "Thali", "Jalebi", "Lassi", "Paratha", "Kheer", "Poha", "Rasam", "Pav"],
-        "Food",
-    ),
-    "mythology": _pad_words(
-        ["Ram", "Sita", "Krishna", "Arjun", "Hanuman", "Ganga", "Kailash", "Ravan", "Veda", "Yagna", "Chakra", "Conch", "Ayodhya", "Dwarka", "Kurukshetra"],
-        "Mythology",
-    ),
-    "politics": _pad_words(
-        ["Parliament", "Lok Sabha", "Rajya Sabha", "Ballot", "Constitution", "Minister", "Cabinet", "Panchayat", "Policy", "Debate", "Election", "Manifesto", "Speaker", "Bill", "Vote"],
-        "Politics",
-    ),
-    "tech_startups": _pad_words(
-        ["Bengaluru", "Founder", "Unicorn", "UPI", "Fintech", "SaaS", "Incubator", "Pitch", "Cloud", "API", "Aadhaar", "Wallet", "Delivery", "Mobility", "Marketplace"],
-        "Startup",
-    ),
-    "languages": _pad_words(
-        ["Hindi", "Tamil", "Telugu", "Marathi", "Bengali", "Gujarati", "Kannada", "Malayalam", "Punjabi", "Odia", "Urdu", "Sanskrit", "Assamese", "Konkani", "Maithili"],
-        "Language",
-    ),
-    "history": _pad_words(
-        ["Ashoka", "Nalanda", "Harappa", "Mughal", "Maratha", "Dandi", "Swaraj", "Quit India", "Maurya", "Gupta", "Chola", "Sanchi", "Konark", "Plassey", "Sepoy"],
-        "History",
-    ),
+    "india": DEFAULT_WORDS,
+    "default": DEFAULT_WORDS,
+    "cities": DEFAULT_WORDS,
+    "bollywood": DEFAULT_WORDS,
+    "cricket": DEFAULT_WORDS,
+    "festivals": DEFAULT_WORDS,
+    "food": DEFAULT_WORDS,
 }
 
 

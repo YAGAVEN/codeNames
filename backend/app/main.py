@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import ORJSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from app.api.routes import admin, auth, friends, matches, rooms, users
+from app.api.routes import admin, auth, friends, frontend, matches, rooms, users
 from app.core.config import get_settings
 from app.core.events import shutdown, startup
 from app.middleware.auth import OptionalAuthMiddleware
@@ -52,6 +52,7 @@ app.include_router(users.router, prefix=f"{settings.API_PREFIX}/users", tags=["u
 app.include_router(friends.router, prefix=f"{settings.API_PREFIX}/friends", tags=["friends"])
 app.include_router(matches.router, prefix=f"{settings.API_PREFIX}/matches", tags=["matches"])
 app.include_router(admin.router, prefix=f"{settings.API_PREFIX}/admin", tags=["admin"])
+app.include_router(frontend.router, prefix=settings.API_PREFIX, tags=["frontend"])
 
 
 @app.exception_handler(AppError)

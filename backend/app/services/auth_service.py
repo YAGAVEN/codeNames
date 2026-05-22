@@ -36,10 +36,11 @@ class AuthTokens:
 class AuthService:
     """Supabase-backed auth orchestration with local JWT issuance."""
 
-    def __init__(self, session: AsyncSession, redis: Redis, settings: Settings) -> None:
+    def __init__(self, session: AsyncSession, redis: Redis, settings: Settings, frontend_url: str | None = None) -> None:
         self.users = UserRepository(session)
         self.redis = redis
         self.settings = settings
+        self.frontend_url = (frontend_url or settings.FRONTEND_URL).rstrip("/")
 
     async def register(self, payload: RegisterRequest) -> AuthTokens:
         """Register with Supabase Auth and create/sync the users profile row."""
@@ -155,7 +156,14 @@ class AuthService:
             return None
         result = await asyncio.to_thread(
             client.auth.sign_up,
-            {"email": str(payload.email), "password": payload.password, "options": {"data": {"username": payload.username}}},
+            {
+                "email": str(payload.email),
+                "password": payload.password,
+                "options": {
+                    "data": {"username": payload.username},
+                    "email_redirect_to": f"{self.frontend_url}/login",
+                },
+            },
         )
         user_id = getattr(getattr(result, "user", None), "id", None)
         return UUID(str(user_id)) if user_id else None

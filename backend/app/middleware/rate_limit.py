@@ -22,7 +22,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         redis = getattr(request.app.state, "redis", None)
         if redis is None:
             return await call_next(request)
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = (
+            request.headers.get("x-real-ip")
+            or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+            or (request.client.host if request.client else "unknown")
+        )
         key = f"ratelimit:ip:{client_ip}:{request.url.path}"
         count = await redis.incr(key)
         if count == 1:

@@ -1,32 +1,5 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/services/gameLogic.js
-import { indianWords } from '../data/indianWords.js';
 import { CARD_TYPES } from '../utils/constants.js';
-
-const shuffle = (items) => [...items].sort(() => Math.random() - 0.5);
-
-/**
- * Builds a 25-card Codenames board with a classic 9/8/7/1 distribution.
- * TODO: Move board generation server-side before enabling ranked games.
- */
-export const generateGameBoard = (categories = []) => {
-  const pool = categories.length
-    ? indianWords.filter((word) => categories.includes(word.category))
-    : indianWords;
-  const selectedWords = shuffle(pool.length >= 25 ? pool : indianWords).slice(0, 25);
-  const cardTypes = shuffle([
-    ...Array(9).fill(CARD_TYPES.RED),
-    ...Array(8).fill(CARD_TYPES.BLUE),
-    ...Array(7).fill(CARD_TYPES.NEUTRAL),
-    CARD_TYPES.ASSASSIN
-  ]);
-
-  return selectedWords.map((word, index) => ({
-    ...word,
-    boardId: `card-${index}`,
-    type: cardTypes[index],
-    revealed: false
-  }));
-};
 
 /**
  * Validates spymaster clues against current board words and clue count limits.

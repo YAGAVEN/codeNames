@@ -1,11 +1,10 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/pages/DashboardPage.jsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Gift, History, Play, Plus, UsersRound } from 'lucide-react';
+import { History, Play, Plus, UsersRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/Button.jsx';
 import { Badge } from '../components/ui/Badge.jsx';
-import { Modal } from '../components/ui/Modal.jsx';
 import { Skeleton } from '../components/shared/Skeleton.jsx';
 import { PlayerAvatar } from '../components/lobby/PlayerAvatar.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
@@ -15,25 +14,17 @@ import { useAuth } from '../hooks/useAuth.js';
 import { formatNumber, relativeTime } from '../utils/helpers.js';
 
 const DashboardPage = () => {
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
   const { createRoom, joinRoom, busy } = useRoom();
   const { showToast } = useToast();
   const [dashboard, setDashboard] = useState(null);
-  const [rewardOpen, setRewardOpen] = useState(true);
-  const [roomCode, setRoomCode] = useState('IND-2048');
+  const [roomCode, setRoomCode] = useState('');
 
   useEffect(() => {
-    fetchDashboard().then(setDashboard);
-  }, []);
-
-  const handleReward = () => {
-    setRewardOpen(false);
-    showToast({
-      type: 'success',
-      title: 'Daily reward claimed',
-      message: '+150 XP and one Diwali streak lamp added.'
+    fetchDashboard().then(setDashboard).catch((error) => {
+      showToast({ type: 'error', title: 'Dashboard load failed', message: error.message });
     });
-  };
+  }, [showToast]);
 
   if (!dashboard) {
     return (
@@ -45,17 +36,27 @@ const DashboardPage = () => {
     );
   }
 
+  const currentUser = dashboard.currentUser || authUser;
+  const recentMatches = currentUser?.matchHistory || [];
+  const winsThisWeek = recentMatches.filter((match) => match.result === 'Win').length;
+  const lossesThisWeek = recentMatches.filter((match) => match.result === 'Loss').length;
+  const totalMatches = recentMatches.length;
+
   return (
     <>
       <div className="grid gap-5 xl:grid-cols-[1fr_24rem]">
         <section className="glass-panel rangoli-border rounded-2xl p-5 sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              <PlayerAvatar player={user} size="lg" />
+              <PlayerAvatar player={currentUser} size="lg" />
               <div>
-                <Badge tone="saffron">Streak {user.streak} days</Badge>
-                <h1 className="mt-2 font-heading text-4xl font-bold text-cream light:text-slate-900">Namaste, {user.name.split(' ')[0]}</h1>
-                <p className="text-cream/65 light:text-slate-600">{user.city} • {formatNumber(user.xp)} XP • {user.winRate}% win rate</p>
+                <Badge tone="saffron">Streak {currentUser?.streak ?? 0} days</Badge>
+                <h1 className="mt-2 font-heading text-4xl font-bold text-cream light:text-slate-900">
+                  Namaste, {(currentUser?.name || 'Player').split(' ')[0]}
+                </h1>
+                <p className="text-cream/65 light:text-slate-600">
+                  {currentUser?.city || '—'} • {formatNumber(currentUser?.xp ?? 0)} XP • {currentUser?.winRate ?? 0}% win rate
+                </p>
               </div>
             </div>
             <div className="flex flex-col gap-2 sm:w-52">
@@ -70,9 +71,9 @@ const DashboardPage = () => {
 
           <div className="mt-6 grid gap-3 md:grid-cols-3">
             {[
-              ['Wins this week', 12],
-              ['Correct guesses', 86],
-              ['MVP medals', 5]
+              ['Matches this week', totalMatches],
+              ['Wins this week', winsThisWeek],
+              ['Losses this week', lossesThisWeek]
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
                 <p className="font-heading text-4xl font-bold text-cream light:text-slate-900">{value}</p>
@@ -110,12 +111,12 @@ const DashboardPage = () => {
             <Badge tone="emerald">{dashboard.rooms.length} live</Badge>
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
-            {dashboard.rooms.map((room) => (
+            {dashboard.rooms.length ? dashboard.rooms.map((room) => (
               <motion.article key={room.id} whileHover={{ y: -4 }} className="glass-panel rounded-2xl p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="font-heading text-2xl font-bold text-cream light:text-slate-900">{room.name}</h3>
-                    <p className="text-sm text-cream/55 light:text-slate-500">Hosted by {room.host.name}</p>
+                    <p className="text-sm text-cream/55 light:text-slate-500">Hosted by {room.host?.name || 'Host'}</p>
                   </div>
                   <Badge tone={room.status === 'Waiting' ? 'emerald' : room.status === 'Private' ? 'red' : 'blue'}>{room.status}</Badge>
                 </div>
@@ -127,7 +128,11 @@ const DashboardPage = () => {
                   Join {room.code}
                 </Button>
               </motion.article>
-            ))}
+            )) : (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-cream/60 light:text-slate-600 lg:col-span-3">
+                No live rooms are available yet. Create one to start a real match.
+              </div>
+            )}
           </div>
         </section>
 
@@ -137,36 +142,21 @@ const DashboardPage = () => {
             <h2 className="font-heading text-3xl font-bold text-cream light:text-slate-900">Recent Matches</h2>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {user.matchHistory.map((match) => (
+            {(currentUser?.matchHistory || []).length ? currentUser.matchHistory.map((match) => (
               <article key={match.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
                 <Badge tone={match.result === 'Win' ? 'emerald' : 'red'}>{match.result}</Badge>
                 <h3 className="mt-3 font-semibold text-cream light:text-slate-900">{match.room}</h3>
                 <p className="text-sm text-cream/55 light:text-slate-500">{match.role} • {match.score}</p>
                 <p className="mt-2 text-xs text-cream/40 light:text-slate-500">{relativeTime(match.playedAt)}</p>
               </article>
-            ))}
+            )) : (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-cream/60 light:text-slate-600 md:col-span-2 xl:col-span-5">
+                Match history will appear here after completed games are saved.
+              </div>
+            )}
           </div>
         </section>
       </div>
-
-      <Modal
-        open={rewardOpen}
-        onClose={() => setRewardOpen(false)}
-        title="Daily Login Reward"
-        description="Keep the streak alive before joining your next room."
-      >
-        <div className="grid grid-cols-5 gap-2">
-          {[1, 2, 3, 4, 5].map((day) => (
-            <div key={day} className={`rounded-xl p-3 text-center ${day <= user.streak ? 'bg-saffron/20 text-saffron' : 'bg-white/5 text-cream/45'}`}>
-              <Gift className="mx-auto h-5 w-5" aria-hidden="true" />
-              <p className="mt-1 text-xs font-bold">Day {day}</p>
-            </div>
-          ))}
-        </div>
-        <Button className="mt-5 w-full" icon={Gift} onClick={handleReward} aria-label="Claim daily reward">
-          Claim +150 XP
-        </Button>
-      </Modal>
     </>
   );
 };

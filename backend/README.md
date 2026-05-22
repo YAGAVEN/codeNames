@@ -10,6 +10,12 @@ Async FastAPI backend for Codenames India with PostgreSQL/Supabase, Redis-backed
 3. Apply migrations with `docker compose run --rm api alembic upgrade head`.
 4. Open `http://localhost:8000/docs`.
 
+## Production (Docker)
+
+1. Copy `.env.example` to `.env` and replace the placeholders with production values.
+2. From the repository root, run `docker compose -f backend/docker-compose.yml up --build`.
+3. The Nginx container serves the frontend on `http://localhost` and proxies `/api` and `/ws` to the backend.
+
 ## Architecture Notes
 
 - REST responses use `{success, data, error, meta}` envelopes.

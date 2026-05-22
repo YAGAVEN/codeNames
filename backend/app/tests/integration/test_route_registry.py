@@ -15,6 +15,7 @@ def test_required_routes_registered() -> None:
         ("GET", "/api/auth/google/callback"),
         ("POST", "/api/rooms/create"),
         ("POST", "/api/rooms/join"),
+        ("GET", "/api/rooms/code/{room_code}"),
         ("GET", "/api/rooms/{room_id}"),
         ("DELETE", "/api/rooms/{room_id}"),
         ("GET", "/api/rooms/public"),
@@ -39,6 +40,8 @@ def test_required_routes_registered() -> None:
         ("GET", "/api/admin/reports"),
         ("POST", "/api/admin/reports/{id}/resolve"),
         ("GET", "/api/admin/analytics"),
+        ("GET", "/api/dashboard"),
+        ("GET", "/api/leaderboard"),
         ("GET", "/health"),
         ("GET", "/metrics"),
     }

@@ -26,7 +26,7 @@ class RoomService:
         """Create a room and add the host as the first player."""
         room_code = await self._unique_room_code()
         room = await self.rooms.create(room_code, host_id, payload.max_players, payload.settings)
-        membership = await self.players.add_player(room.id, host_id)
+        membership = await self.players.add_player(room.id, host_id, Team.RED, PlayerRole.SPYMASTER)
         await self._cache_membership(room.id, host_id, membership.team, membership.role)
         await self.rooms.commit()
         await self.rooms.refresh(room)
@@ -50,9 +50,17 @@ class RoomService:
             raise ConflictError("Room is full")
         existing = await self.players.get_membership(room.id, user_id)
         if existing is None:
-            membership = await self.players.add_player(room.id, user_id, payload.team)
+            team, role = await self._assign_team_role(room.id, payload.team)
+            membership = await self.players.add_player(room.id, user_id, team, role)
             await self._cache_membership(room.id, user_id, membership.team, membership.role)
             await self.rooms.commit()
+        return await self.describe_room(room.id)
+
+    async def describe_room_by_code(self, room_code: str) -> RoomRead:
+        """Return room details by public room code."""
+        room = await self.rooms.get_by_code(room_code)
+        if room is None:
+            raise NotFoundError("Room not found")
         return await self.describe_room(room.id)
 
     async def describe_room(self, room_id: UUID) -> RoomRead:
@@ -130,6 +138,22 @@ class RoomService:
             if await self.rooms.get_by_code(code) is None:
                 return code
         raise ConflictError("Could not allocate a unique room code")
+
+    async def _assign_team_role(self, room_id: UUID, requested_team: Team) -> tuple[Team, PlayerRole]:
+        """Balance new players across teams and ensure each team gets a spymaster."""
+        if requested_team != Team.SPECTATOR:
+            team = requested_team
+        else:
+            rows = await self.players.list_by_room(room_id)
+            counts = {
+                Team.RED: sum(1 for membership, _ in rows if membership.team == Team.RED),
+                Team.BLUE: sum(1 for membership, _ in rows if membership.team == Team.BLUE),
+            }
+            team = Team.BLUE if counts[Team.BLUE] <= counts[Team.RED] else Team.RED
+
+        rows = await self.players.list_by_room(room_id)
+        has_spymaster = any(membership.team == team and membership.role == PlayerRole.SPYMASTER for membership, _ in rows)
+        return team, PlayerRole.OPERATIVE if has_spymaster else PlayerRole.SPYMASTER
 
     async def _cache_membership(self, room_id: UUID, user_id: UUID, team: Team, role: PlayerRole) -> None:
         """Cache trusted team/role membership for WebSocket anti-cheat checks."""

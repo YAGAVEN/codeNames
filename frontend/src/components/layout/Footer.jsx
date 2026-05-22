@@ -12,7 +12,7 @@ export const Footer = () => (
         <Link className="hover:text-saffron" to="/leaderboard">
           Leaderboard
         </Link>
-        <Link className="hover:text-saffron" to="/lobby/IND-2048">
+        <Link className="hover:text-saffron" to="/lobby">
           Join lobby
         </Link>
       </div>

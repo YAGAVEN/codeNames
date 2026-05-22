@@ -14,9 +14,15 @@ class RoomPlayerRepository(BaseRepository[RoomPlayer]):
 
     model = RoomPlayer
 
-    async def add_player(self, room_id: UUID, user_id: UUID, team: Team = Team.SPECTATOR) -> RoomPlayer:
+    async def add_player(
+        self,
+        room_id: UUID,
+        user_id: UUID,
+        team: Team = Team.SPECTATOR,
+        role: PlayerRole = PlayerRole.OPERATIVE,
+    ) -> RoomPlayer:
         """Add a user to a room."""
-        player = RoomPlayer(room_id=room_id, user_id=user_id, team=team, role=PlayerRole.OPERATIVE)
+        player = RoomPlayer(room_id=room_id, user_id=user_id, team=team, role=role)
         return await self.add(player)
 
     async def get_membership(self, room_id: UUID, user_id: UUID) -> RoomPlayer | None:

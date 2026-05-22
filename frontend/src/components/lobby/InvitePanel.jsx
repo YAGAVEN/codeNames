@@ -5,16 +5,17 @@ import { Badge } from '../ui/Badge.jsx';
 import { useRoom } from '../../hooks/useRoom.js';
 import { useToast } from '../ui/Toast.jsx';
 
-export const InvitePanel = ({ roomCode = 'IND-2048' }) => {
+export const InvitePanel = ({ roomCode = '' }) => {
   const { copyInvite } = useRoom();
   const { showToast } = useToast();
 
   const handleCopy = async () => {
     const copied = await copyInvite(roomCode);
+    const label = roomCode || 'Room';
     showToast({
       type: copied ? 'success' : 'warning',
       title: copied ? 'Invite copied' : 'Clipboard unavailable',
-      message: copied ? `${roomCode} link is ready for WhatsApp or Discord.` : 'Share the room code manually.'
+      message: copied ? `${label} link is ready for WhatsApp or Discord.` : 'Share the room code manually.'
     });
   };
 
@@ -25,17 +26,17 @@ export const InvitePanel = ({ roomCode = 'IND-2048' }) => {
           <h2 className="font-heading text-2xl font-bold text-cream light:text-slate-900">Invite Friends</h2>
           <p className="text-sm text-cream/60 light:text-slate-600">Copy link, share room code, or keep a private adda.</p>
         </div>
-        <Badge tone="saffron">{roomCode}</Badge>
+        <Badge tone="saffron">{roomCode || 'Lobby'}</Badge>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         <Button variant="secondary" icon={Copy} onClick={handleCopy} aria-label="Copy room invite link">
           Copy link
         </Button>
-        <Button variant="secondary" icon={Share2} aria-label="Open share sheet mock">
+        <Button variant="secondary" icon={Share2} aria-label="Open share sheet">
           Share
         </Button>
-        <Button variant="secondary" icon={UserRoundPlus} aria-label="Show pending friend invites">
-          Pending 2
+        <Button variant="secondary" icon={UserRoundPlus} aria-label="Show pending friend invites" disabled>
+          Pending invites
         </Button>
       </div>
     </section>

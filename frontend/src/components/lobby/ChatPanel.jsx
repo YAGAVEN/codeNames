@@ -4,6 +4,7 @@ import { Send, SmilePlus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '../ui/Button.jsx';
 import { PlayerAvatar } from './PlayerAvatar.jsx';
+import { useToast } from '../ui/Toast.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useGame } from '../../hooks/useGame.js';
 import { useSocket } from '../../hooks/useSocket.js';
@@ -13,9 +14,11 @@ import { relativeTime } from '../../utils/helpers.js';
 
 export const ChatPanel = ({ compact = false }) => {
   const { user } = useAuth();
-  const { chatMessages, addChatMessage, addReaction } = useGame();
-  const { emit } = useSocket();
+  const { chatMessages } = useGame();
+  const { emit, connected } = useSocket();
+  const { showToast } = useToast();
   const [message, setMessage] = useState('');
+  const canChat = Boolean(user?.id) && connected;
 
   const submitMessage = async (event) => {
     event.preventDefault();
@@ -24,22 +27,38 @@ export const ChatPanel = ({ compact = false }) => {
     if (!trimmed) {
       return;
     }
+    if (!user?.id) {
+      showToast({ type: 'warning', title: 'Sign in to chat', message: 'Log in to send room messages.' });
+      return;
+    }
+    if (!connected) {
+      showToast({ type: 'warning', title: 'Socket offline', message: 'Reconnect to send chat messages.' });
+      return;
+    }
 
-    const nextMessage = {
-      id: crypto.randomUUID(),
-      author: user,
-      message: trimmed,
-      createdAt: new Date().toISOString()
-    };
-
-    addChatMessage(nextMessage);
-    await emit(SOCKET_EVENTS.CHAT_MESSAGE, nextMessage);
-    setMessage('');
+    try {
+      await emit(SOCKET_EVENTS.CHAT_MESSAGE, { message: trimmed });
+      setMessage('');
+    } catch (error) {
+      showToast({ type: 'error', title: 'Message failed', message: error.message });
+    }
   };
 
   const react = async (emoji) => {
-    addReaction({ emoji, player: user });
-    await emit(SOCKET_EVENTS.EMOJI_REACTION, { emoji, playerId: user.id });
+    if (!user?.id) {
+      showToast({ type: 'warning', title: 'Sign in to react', message: 'Log in to send reactions.' });
+      return;
+    }
+    if (!connected) {
+      showToast({ type: 'warning', title: 'Socket offline', message: 'Reconnect to send reactions.' });
+      return;
+    }
+
+    try {
+      await emit(SOCKET_EVENTS.EMOJI_REACTION, { emoji, playerId: user.id });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Reaction failed', message: error.message });
+    }
   };
 
   return (
@@ -79,6 +98,7 @@ export const ChatPanel = ({ compact = false }) => {
             type="button"
             aria-label={`Send ${emoji} reaction`}
             onClick={() => react(emoji)}
+            disabled={!canChat}
             className="touch-target rounded-lg border border-white/10 bg-white/5 text-lg transition hover:border-saffron/50 hover:bg-white/10"
           >
             {emoji}
@@ -92,9 +112,10 @@ export const ChatPanel = ({ compact = false }) => {
           onChange={(event) => setMessage(event.target.value)}
           aria-label="Message room chat"
           placeholder="Send a clue-safe message"
+          disabled={!canChat}
           className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-sm text-cream outline-none transition placeholder:text-cream/35 focus:border-saffron/60 light:text-slate-900 light:placeholder:text-slate-400"
         />
-        <Button type="submit" aria-label="Send chat message" icon={Send} />
+        <Button type="submit" aria-label="Send chat message" icon={Send} disabled={!canChat} />
       </form>
     </section>
   );

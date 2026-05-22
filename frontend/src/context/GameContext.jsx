@@ -1,43 +1,115 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/context/GameContext.jsx
-import { createContext, useContext, useMemo, useReducer } from 'react';
-import { mockPlayers } from '../data/mockPlayers.js';
-import { mockRooms } from '../data/mockRooms.js';
-import { calculateScore, generateGameBoard, revealCardById } from '../services/gameLogic.js';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from 'react';
+import { calculateScore, revealCardById } from '../services/gameLogic.js';
+import { useSocket } from '../hooks/useSocket.js';
+import { SOCKET_EVENTS } from '../services/socket.js';
 import { DEFAULT_ROOM_SETTINGS, EMOJI_REACTIONS, TEAM_TYPES } from '../utils/constants.js';
 
 const GameContext = createContext(null);
 
-const initialBoard = generateGameBoard(DEFAULT_ROOM_SETTINGS.categories);
+const emptyScore = {
+  red: 0,
+  blue: 0,
+  neutral: 0,
+  assassinRevealed: false,
+  redTotal: 9,
+  blueTotal: 8
+};
 
 const initialState = {
-  room: mockRooms[0],
-  players: mockPlayers,
-  board: initialBoard,
+  room: null,
+  players: [],
+  board: [],
+  spymasterBoard: [],
+  serverScore: emptyScore,
   currentTurn: TEAM_TYPES.RED,
-  clue: { word: 'Monsoon', count: 3, from: mockPlayers[0] },
-  chatMessages: [
-    {
-      id: 'chat-1',
-      author: mockPlayers[0],
-      message: 'Red team ready? Think food streets and cricket stands.',
-      createdAt: new Date(Date.now() - 720000).toISOString()
-    },
-    {
-      id: 'chat-2',
-      author: mockPlayers[1],
-      message: 'Blue spy network online. No peeking at the map.',
-      createdAt: new Date(Date.now() - 420000).toISOString()
-    }
-  ],
+  clue: { word: '', count: 0, from: null },
+  chatMessages: [],
   reactions: [],
-  readyPlayers: ['p1', 'p2', 'p3', 'p4'],
+  readyPlayers: [],
   roomSettings: DEFAULT_ROOM_SETTINGS,
   winner: null,
   timerSeconds: DEFAULT_ROOM_SETTINGS.timerLength
 };
 
+const normalizeClue = (clue = {}) => ({
+  word: clue.word || '',
+  count: Number(clue.count ?? clue.number ?? 0),
+  remaining: Number(clue.remaining ?? clue.count ?? clue.number ?? 0),
+  from: clue.from || null
+});
+
+const playerFromEvent = (payload = {}) => {
+  const id = String(payload.user_id || payload.playerId || payload.id || '');
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    name: payload.name || payload.username || `Player ${id.slice(0, 6)}`,
+    handle: payload.username ? `@${payload.username}` : '',
+    team: payload.team || TEAM_TYPES.SPECTATOR,
+    role: payload.role === 'spymaster' ? 'Spymaster' : payload.role === 'operative' ? 'Operative' : payload.role || 'Operative',
+    status: 'online',
+    level: Number(payload.level ?? 1),
+    winRate: Number(payload.winRate ?? payload.win_rate ?? 0)
+  };
+};
+
 const gameReducer = (state, action) => {
   switch (action.type) {
+    case 'SET_ROOM_STATE': {
+      const room = action.payload || {};
+      const settings = room.settings || {};
+      return {
+        ...state,
+        room,
+        players: room.players || state.players,
+        readyPlayers: room.readyPlayers || state.readyPlayers,
+        roomSettings: { ...state.roomSettings, ...settings },
+        timerSeconds: Number(settings.timerLength || state.timerSeconds)
+      };
+    }
+    case 'SET_BOARD':
+      return {
+        ...state,
+        board: action.payload.board || [],
+        serverScore: action.payload.score || state.serverScore
+      };
+    case 'SET_SPYMASTER_BOARD':
+      return { ...state, spymasterBoard: action.payload || [] };
+    case 'SET_SCORE':
+      return { ...state, serverScore: { ...state.serverScore, ...action.payload } };
+    case 'SET_TURN':
+      return { ...state, currentTurn: action.payload || TEAM_TYPES.RED, clue: { word: '', count: 0, from: null } };
+    case 'SET_WINNER':
+      return { ...state, winner: action.payload || null };
+    case 'UPSERT_PLAYER': {
+      const player = playerFromEvent(action.payload);
+      if (!player) {
+        return state;
+      }
+      const exists = state.players.some((item) => item.id === player.id);
+      return {
+        ...state,
+        players: exists
+          ? state.players.map((item) => (item.id === player.id ? { ...item, ...player } : item))
+          : [...state.players, player]
+      };
+    }
+    case 'SET_READY': {
+      const playerId = String(action.payload.playerId || action.payload.user_id || '');
+      if (!playerId) {
+        return state;
+      }
+      return {
+        ...state,
+        readyPlayers: action.payload.ready
+          ? [...new Set([...state.readyPlayers, playerId])]
+          : state.readyPlayers.filter((id) => id !== playerId)
+      };
+    }
     case 'REVEAL_CARD': {
       const board = revealCardById(state.board, action.payload);
       const score = calculateScore(board);
@@ -55,8 +127,18 @@ const gameReducer = (state, action) => {
         currentTurn: state.currentTurn === TEAM_TYPES.RED ? TEAM_TYPES.BLUE : TEAM_TYPES.RED
       };
     }
+    case 'APPLY_CARD': {
+      const card = action.payload;
+      const board = state.board.map((item) => (item.boardId === card.boardId ? { ...item, ...card } : item));
+      const spymasterBoard = state.spymasterBoard.map((item) => (item.boardId === card.boardId ? { ...item, ...card } : item));
+      return {
+        ...state,
+        board,
+        spymasterBoard
+      };
+    }
     case 'GIVE_CLUE':
-      return { ...state, clue: action.payload, timerSeconds: state.roomSettings.timerLength };
+      return { ...state, clue: normalizeClue(action.payload), timerSeconds: state.roomSettings.timerLength };
     case 'ADD_CHAT_MESSAGE':
       return { ...state, chatMessages: [...state.chatMessages, action.payload] };
     case 'ADD_REACTION':
@@ -84,7 +166,9 @@ const gameReducer = (state, action) => {
     case 'START_GAME':
       return {
         ...state,
-        board: generateGameBoard(state.roomSettings.categories),
+        board: [],
+        spymasterBoard: [],
+        serverScore: emptyScore,
         winner: null,
         timerSeconds: state.roomSettings.timerLength
       };
@@ -97,12 +181,86 @@ const gameReducer = (state, action) => {
 
 export const GameProvider = ({ children }) => {
   const [state, dispatch] = useReducer(gameReducer, initialState);
+  const { lastEvent } = useSocket();
+  const setRoomState = useCallback((room) => dispatch({ type: 'SET_ROOM_STATE', payload: room }), []);
+
+  useEffect(() => {
+    if (!lastEvent?.event) {
+      return;
+    }
+
+    switch (lastEvent.event) {
+      case SOCKET_EVENTS.GAME_STARTED:
+        dispatch({
+          type: 'SET_BOARD',
+          payload: {
+            board: lastEvent.board || [],
+            score: lastEvent.scores
+          }
+        });
+        dispatch({ type: 'SET_TURN', payload: lastEvent.current_team });
+        dispatch({ type: 'GIVE_CLUE', payload: lastEvent.current_clue || {} });
+        dispatch({ type: 'SET_WINNER', payload: lastEvent.winner_team });
+        break;
+      case SOCKET_EVENTS.BOARD_UPDATED:
+        dispatch({ type: 'SET_BOARD', payload: { board: lastEvent.board || [], score: lastEvent.scores } });
+        break;
+      case SOCKET_EVENTS.SPYMASTER_BOARD_UPDATED:
+        dispatch({ type: 'SET_SPYMASTER_BOARD', payload: lastEvent.board || [] });
+        break;
+      case SOCKET_EVENTS.CARD_REVEALED:
+        if (lastEvent.card) {
+          dispatch({ type: 'APPLY_CARD', payload: lastEvent.card });
+        }
+        break;
+      case SOCKET_EVENTS.SCORE_UPDATED:
+        dispatch({ type: 'SET_SCORE', payload: lastEvent.scores || {} });
+        break;
+      case SOCKET_EVENTS.TURN_CHANGED:
+        dispatch({ type: 'SET_TURN', payload: lastEvent.current_team });
+        break;
+      case SOCKET_EVENTS.CLUE_RECEIVED:
+        dispatch({ type: 'GIVE_CLUE', payload: lastEvent.clue || {} });
+        break;
+      case SOCKET_EVENTS.GAME_OVER:
+        dispatch({ type: 'SET_WINNER', payload: lastEvent.winner_team });
+        break;
+      case SOCKET_EVENTS.PLAYER_JOINED:
+        if (lastEvent.is_ready !== undefined) {
+          dispatch({ type: 'SET_READY', payload: { playerId: lastEvent.user_id, ready: Boolean(lastEvent.is_ready) } });
+        } else {
+          dispatch({ type: 'UPSERT_PLAYER', payload: lastEvent });
+        }
+        break;
+      case SOCKET_EVENTS.CHAT_MESSAGE:
+        if (lastEvent.message) {
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `${lastEvent.sender_id}-${lastEvent.receivedAt}`,
+              author: playerFromEvent({ user_id: lastEvent.sender_id }),
+              message: lastEvent.message,
+              createdAt: lastEvent.receivedAt
+            }
+          });
+        }
+        break;
+      case SOCKET_EVENTS.EMOJI_REACTION:
+        if (lastEvent.reaction) {
+          dispatch({ type: 'ADD_REACTION', payload: { emoji: lastEvent.reaction, player: playerFromEvent({ user_id: lastEvent.sender_id }) } });
+        }
+        break;
+      default:
+        break;
+    }
+  }, [lastEvent]);
 
   const value = useMemo(
     () => ({
       ...state,
-      score: calculateScore(state.board),
+      score: state.board.length ? { ...calculateScore(state.board), ...state.serverScore } : state.serverScore,
       emojiOptions: EMOJI_REACTIONS,
+      setRoomState,
       revealCard: (cardId) => dispatch({ type: 'REVEAL_CARD', payload: cardId }),
       giveClue: (clue) => dispatch({ type: 'GIVE_CLUE', payload: clue }),
       addChatMessage: (message) => dispatch({ type: 'ADD_CHAT_MESSAGE', payload: message }),
@@ -113,7 +271,7 @@ export const GameProvider = ({ children }) => {
       startGame: () => dispatch({ type: 'START_GAME' }),
       setTimer: (seconds) => dispatch({ type: 'SET_TIMER', payload: seconds })
     }),
-    [state]
+    [setRoomState, state]
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

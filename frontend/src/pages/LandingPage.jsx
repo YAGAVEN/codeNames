@@ -1,4 +1,5 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/pages/LandingPage.jsx
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowRight, Gamepad2, ShieldCheck, Sparkles, Trophy, UsersRound } from 'lucide-react';
@@ -7,7 +8,7 @@ import { Badge } from '../components/ui/Badge.jsx';
 import { Footer } from '../components/layout/Footer.jsx';
 import rangoliPattern from '../assets/patterns/rangoli-mandala.svg';
 import circuitPattern from '../assets/patterns/india-circuit.svg';
-import { mockRooms } from '../data/mockRooms.js';
+import { fetchPublicRooms } from '../services/api.js';
 import { formatNumber } from '../utils/helpers.js';
 
 const features = [
@@ -16,15 +17,28 @@ const features = [
   { icon: ShieldCheck, title: 'Spymaster Mode', text: 'A color-coded hidden map, clue validation, and turn-safe team controls.' }
 ];
 
-const stats = [
-  ['Active rooms', mockRooms.length],
-  ['Word cards', 100],
-  ['Festival themes', 3],
-  ['Mock events', 11]
-];
+const LandingPage = () => {
+  const [activeRooms, setActiveRooms] = useState(0);
+  const [featuredRoom, setFeaturedRoom] = useState(null);
 
-const LandingPage = () => (
-  <div className="min-h-screen overflow-hidden text-cream light:text-slate-950">
+  useEffect(() => {
+    let active = true;
+
+    fetchPublicRooms().then((rooms) => {
+      if (!active) {
+        return;
+      }
+      setActiveRooms(rooms.length);
+      setFeaturedRoom(rooms[0] || null);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return (
+    <div className="min-h-screen overflow-hidden text-cream light:text-slate-950">
     <header className="absolute inset-x-0 top-0 z-30 px-4 py-5 sm:px-6 lg:px-8">
       <nav className="mx-auto flex max-w-7xl items-center justify-between" aria-label="Landing navigation">
         <Link to="/" className="flex items-center gap-3" aria-label="Codenames India home">
@@ -61,7 +75,7 @@ const LandingPage = () => (
         <div className="relative z-10 mx-auto flex max-w-7xl flex-col justify-center">
           <Badge tone="saffron" className="w-max">
             <Gamepad2 className="h-3.5 w-3.5" aria-hidden="true" />
-            Live multiplayer mock ready
+            Live multiplayer ready
           </Badge>
           <h1 className="mt-5 max-w-4xl font-heading text-6xl font-bold leading-none sm:text-7xl lg:text-8xl">
             Codenames <span className="festival-text">India</span>
@@ -73,17 +87,27 @@ const LandingPage = () => (
             <Button as={Link} to="/dashboard" size="lg" icon={ArrowRight} aria-label="Start playing Codenames India">
               Start Playing
             </Button>
-            <Button as={Link} to="/lobby/IND-2048" size="lg" variant="secondary" aria-label="Join featured lobby">
-              Join IND-2048
-            </Button>
+            {featuredRoom ? (
+              <Button
+                as={Link}
+                to={`/lobby/${featuredRoom.room_code || featuredRoom.roomCode}`}
+                size="lg"
+                variant="secondary"
+                aria-label="Join featured lobby"
+              >
+                Join {featuredRoom.room_code || featuredRoom.roomCode}
+              </Button>
+            ) : (
+              <Button as={Link} to="/lobby" size="lg" variant="secondary" aria-label="Open lobby">
+                Open Lobby
+              </Button>
+            )}
           </div>
-          <div className="mt-10 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
-            {stats.map(([label, value]) => (
-              <div key={label} className="glass-panel rounded-xl p-4">
-                <p className="font-heading text-3xl font-bold text-cream light:text-slate-900">{formatNumber(value)}</p>
-                <p className="text-xs font-semibold uppercase tracking-normal text-cream/50 light:text-slate-500">{label}</p>
-              </div>
-            ))}
+          <div className="mt-10 grid max-w-xs grid-cols-1 gap-3">
+            <div className="glass-panel rounded-xl p-4">
+              <p className="font-heading text-3xl font-bold text-cream light:text-slate-900">{formatNumber(activeRooms)}</p>
+              <p className="text-xs font-semibold uppercase tracking-normal text-cream/50 light:text-slate-500">Active rooms</p>
+            </div>
           </div>
         </div>
       </section>
@@ -99,7 +123,8 @@ const LandingPage = () => (
       </section>
     </main>
     <Footer />
-  </div>
-);
+    </div>
+  );
+};
 
 export default LandingPage;

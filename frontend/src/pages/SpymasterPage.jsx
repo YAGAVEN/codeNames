@@ -1,4 +1,5 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/pages/SpymasterPage.jsx
+import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Eye, ShieldAlert } from 'lucide-react';
 import { Badge } from '../components/ui/Badge.jsx';
@@ -8,10 +9,17 @@ import { Scoreboard } from '../components/game/Scoreboard.jsx';
 import { TeamPanel } from '../components/game/TeamPanel.jsx';
 import { WordGrid } from '../components/game/WordGrid.jsx';
 import { useGame } from '../hooks/useGame.js';
+import { useSocket } from '../hooks/useSocket.js';
 
 const SpymasterPage = () => {
-  const { roomCode = 'IND-2048' } = useParams();
-  const { board, score, currentTurn, clue, players } = useGame();
+  const { roomCode } = useParams();
+  const { board, spymasterBoard, score, currentTurn, clue, players } = useGame();
+  const { setRoomCode } = useSocket();
+  const visibleBoard = spymasterBoard.length ? spymasterBoard : board;
+
+  useEffect(() => {
+    setRoomCode(roomCode || '');
+  }, [roomCode, setRoomCode]);
 
   return (
     <div className="space-y-4">
@@ -23,9 +31,11 @@ const SpymasterPage = () => {
               Hidden map active
             </Badge>
             <h1 className="mt-3 font-heading text-4xl font-bold text-cream light:text-slate-900">Spymaster View</h1>
-            <p className="text-cream/65 light:text-slate-600">Room {roomCode} map is visible. Keep clues legal and team-safe.</p>
+            <p className="text-cream/65 light:text-slate-600">
+              {roomCode ? `Room ${roomCode}` : 'Room'} map is visible. Keep clues legal and team-safe.
+            </p>
           </div>
-          <Button as={Link} to={`/game/${roomCode}`} variant="secondary" icon={ArrowLeft} aria-label="Return to operative game view">
+          <Button as={Link} to={roomCode ? `/game/${roomCode}` : '/game'} variant="secondary" icon={ArrowLeft} aria-label="Return to operative game view">
             Back to Game
           </Button>
         </div>
@@ -41,14 +51,14 @@ const SpymasterPage = () => {
               <h2 className="font-heading text-2xl font-bold text-red-100">Map Discipline</h2>
             </div>
             <p className="mt-2 text-sm text-red-100/70">
-              Do not describe card colors, positions, or category counts in chat. The mock validator only checks clue text.
+              Do not describe card colors, positions, or category counts in chat. The validator only checks clue text.
             </p>
           </section>
         </aside>
 
         <section className="space-y-4">
           <Scoreboard score={score} currentTurn={currentTurn} clue={clue} />
-          <WordGrid board={board} spymaster disabled />
+          <WordGrid board={visibleBoard} spymaster disabled />
         </section>
       </div>
     </div>

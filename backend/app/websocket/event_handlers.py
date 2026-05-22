@@ -60,6 +60,76 @@ async def _membership(context: EventContext) -> tuple[Team, PlayerRole]:
     return Team(team), PlayerRole(role)
 
 
+def _public_card(card: dict[str, Any]) -> dict[str, Any]:
+    """Hide unrevealed card ownership from operative clients."""
+    payload = {
+        "index": card["index"],
+        "word": card["word"],
+        "revealed": card["revealed"],
+    }
+    if card["revealed"]:
+        payload["team"] = card["team"]
+        payload["type"] = card["team"]
+        payload["revealed_by"] = card.get("revealed_by")
+    return payload
+
+
+def _full_card(card: dict[str, Any]) -> dict[str, Any]:
+    """Return the full card payload for authorized spymaster clients."""
+    return {
+        "index": card["index"],
+        "word": card["word"],
+        "team": card["team"],
+        "type": card["team"],
+        "revealed": card["revealed"],
+        "revealed_by": card.get("revealed_by"),
+    }
+
+
+def _score_payload(state: dict[str, Any]) -> dict[str, Any]:
+    """Build score data with found counts and totals."""
+    board = state["board"]
+    return {
+        "red": state["scores"][Team.RED.value],
+        "blue": state["scores"][Team.BLUE.value],
+        "neutral": sum(1 for card in board if card["team"] == "neutral" and card["revealed"]),
+        "assassinRevealed": any(card["team"] == "assassin" and card["revealed"] for card in board),
+        "redTotal": sum(1 for card in board if card["team"] == Team.RED.value),
+        "blueTotal": sum(1 for card in board if card["team"] == Team.BLUE.value),
+    }
+
+
+def _public_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Return the server-authoritative game state safe for all players."""
+    return {
+        "room_id": state["room_id"],
+        "status": state["status"],
+        "seed": state["seed"],
+        "word_pack": state["word_pack"],
+        "board": [_public_card(card) for card in state["board"]],
+        "current_team": state["current_team"],
+        "current_clue": state["current_clue"],
+        "scores": _score_payload(state),
+        "winner_team": state["winner_team"],
+    }
+
+
+async def _send_spymaster_board(context: EventContext, state: dict[str, Any]) -> None:
+    """Send the hidden board only to sockets cached as spymasters."""
+    memberships = await context.redis.hgetall(f"room:membership:{context.room_id}")
+    for raw_user_id, raw_value in memberships.items():
+        user_id = raw_user_id.decode() if isinstance(raw_user_id, bytes) else str(raw_user_id)
+        value = raw_value.decode() if isinstance(raw_value, bytes) else str(raw_value)
+        _, role = value.split(":", 1)
+        if role == PlayerRole.SPYMASTER.value:
+            await context.manager.send_to_user(
+                context.room_id,
+                user_id,
+                "spymaster_board_updated",
+                {"board": [_full_card(card) for card in state["board"]]},
+            )
+
+
 @websocket_handler("create_room")
 async def create_room(context: EventContext, data: dict[str, Any]) -> None:
     """Broadcast a room-created event for realtime lobby clients."""
@@ -81,6 +151,19 @@ async def join_room(context: EventContext, data: dict[str, Any]) -> None:
         team = Team(team_value)
         role = PlayerRole(role_value)
     await context.manager.broadcast(context.room_id, "player_joined", {"user_id": context.user_id, "team": team.value, "role": role.value})
+    try:
+        state = await GameManager(context.redis).load_state(context.room_id)
+    except GameRuleError:
+        return
+    public_state = _public_state(state)
+    await context.manager.send_to_user(context.room_id, context.user_id, "game_started", public_state)
+    if role == PlayerRole.SPYMASTER:
+        await context.manager.send_to_user(
+            context.room_id,
+            context.user_id,
+            "spymaster_board_updated",
+            {"board": [_full_card(card) for card in state["board"]]},
+        )
 
 
 @websocket_handler("leave_room")
@@ -104,9 +187,9 @@ async def start_game(context: EventContext, data: dict[str, Any]) -> None:
     seed = str(data.get("seed") or uuid4())
     words = await WordService(context.redis, context.settings).load_word_pack(pack_name)
     state = await GameManager(context.redis).start_game(context.room_id, words, seed, pack_name)
-    public_board = [{"index": card["index"], "word": card["word"], "revealed": card["revealed"]} for card in state["board"]]
-    await context.manager.broadcast(context.room_id, "game_started", {"room_id": context.room_id, "seed": seed})
-    await context.manager.broadcast(context.room_id, "board_updated", {"board": public_board})
+    await context.manager.broadcast(context.room_id, "game_started", _public_state(state))
+    await context.manager.broadcast(context.room_id, "board_updated", {"board": _public_state(state)["board"], "scores": _score_payload(state)})
+    await _send_spymaster_board(context, state)
 
 
 @websocket_handler("give_clue")
@@ -131,8 +214,9 @@ async def select_card(context: EventContext, data: dict[str, Any]) -> None:
     card_index = int(data["card_index"])
     state = await GameManager(context.redis).select_card(context.room_id, context.user_id, team, role, card_index)
     card = state["board"][card_index]
-    await context.manager.broadcast(context.room_id, "card_revealed", {"card": card})
-    await context.manager.broadcast(context.room_id, "score_updated", {"scores": state["scores"]})
+    await context.manager.broadcast(context.room_id, "card_revealed", {"card": _full_card(card)})
+    await context.manager.broadcast(context.room_id, "score_updated", {"scores": _score_payload(state)})
+    await _send_spymaster_board(context, state)
     if state["status"] == "finished":
         await context.manager.broadcast(context.room_id, "game_over", {"winner_team": state["winner_team"]})
     else:

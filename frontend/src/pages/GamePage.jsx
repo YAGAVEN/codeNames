@@ -20,12 +20,16 @@ import { useSocket } from '../hooks/useSocket.js';
 import { SOCKET_EVENTS } from '../services/socket.js';
 
 const GamePage = () => {
-  const { roomCode = 'IND-2048' } = useParams();
+  const { roomCode } = useParams();
   const { soundEnabled, setSoundEnabled } = useAuth();
-  const { board, revealCard, score, currentTurn, clue, players, timerSeconds, roomSettings, setTimer, winner } = useGame();
-  const { emit } = useSocket();
+  const { board, score, currentTurn, clue, players, timerSeconds, roomSettings, setTimer, winner } = useGame();
+  const { emit, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [chatOpen, setChatOpen] = useState(false);
+
+  useEffect(() => {
+    setRoomCode(roomCode || '');
+  }, [roomCode, setRoomCode]);
 
   useEffect(() => {
     if (winner) {
@@ -34,16 +38,18 @@ const GamePage = () => {
   }, [showToast, winner]);
 
   const handleReveal = async (cardId) => {
-    revealCard(cardId);
-    await emit(SOCKET_EVENTS.MAKE_GUESS, { roomCode, cardId });
-    await emit(SOCKET_EVENTS.CARD_REVEALED, { roomCode, cardId });
+    try {
+      await emit(SOCKET_EVENTS.MAKE_GUESS, { roomCode, cardId });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Guess failed', message: error.message });
+    }
   };
 
   return (
     <div className="space-y-4">
       <section className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <Badge tone={currentTurn === 'red' ? 'red' : 'blue'}>{roomCode}</Badge>
+          <Badge tone={currentTurn === 'red' ? 'red' : 'blue'}>{roomCode || 'Game'}</Badge>
           <h1 className="mt-2 font-heading text-4xl font-bold text-cream light:text-slate-900">Main Game Screen</h1>
           <p className="text-cream/65 light:text-slate-600">Operatives guess carefully. One assassin card can end the night.</p>
         </div>
@@ -59,7 +65,7 @@ const GamePage = () => {
           <Button className="xl:hidden" variant="secondary" icon={MessageCircle} onClick={() => setChatOpen(true)} aria-label="Open chat panel">
             Chat
           </Button>
-          <Button as={Link} to={`/spymaster/${roomCode}`} variant="secondary" icon={Eye} aria-label="Open spymaster view">
+          <Button as={Link} to={roomCode ? `/spymaster/${roomCode}` : '/spymaster'} variant="secondary" icon={Eye} aria-label="Open spymaster view">
             Spymaster
           </Button>
         </div>

@@ -5,7 +5,7 @@ import { cn } from '../../utils/helpers.js';
 
 const mobileItems = [
   { label: 'Home', path: '/dashboard', icon: Gauge },
-  { label: 'Game', path: '/game/IND-2048', icon: Gamepad2 },
+  { label: 'Game', path: '/game', icon: Gamepad2 },
   { label: 'Ranks', path: '/leaderboard', icon: Trophy },
   { label: 'Profile', path: '/profile', icon: UserRound },
   { label: 'Settings', path: '/settings', icon: Settings }

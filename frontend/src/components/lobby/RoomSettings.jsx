@@ -2,26 +2,18 @@
 import { Lock, TimerReset, Unlock } from 'lucide-react';
 import { Badge } from '../ui/Badge.jsx';
 import { Button } from '../ui/Button.jsx';
-import { indianWordCategories } from '../../data/indianWords.js';
 import { useGame } from '../../hooks/useGame.js';
+import { WORD_PACK_OPTIONS } from '../../utils/constants.js';
 
 export const RoomSettings = () => {
   const { roomSettings, updateRoomSettings } = useGame();
-  const categories = Object.keys(indianWordCategories);
-
-  const toggleCategory = (category) => {
-    const selected = roomSettings.categories.includes(category)
-      ? roomSettings.categories.filter((item) => item !== category)
-      : [...roomSettings.categories, category];
-    updateRoomSettings({ categories: selected });
-  };
 
   return (
     <section className="glass-panel rounded-2xl p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="font-heading text-2xl font-bold text-cream light:text-slate-900">Room Settings</h2>
-          <p className="text-sm text-cream/60 light:text-slate-600">Tune categories, timer, team sizes, and privacy.</p>
+          <p className="text-sm text-cream/60 light:text-slate-600">Tune word pack, timer, team sizes, and privacy.</p>
         </div>
         <Badge tone={roomSettings.visibility === 'private' ? 'red' : 'emerald'}>
           {roomSettings.visibility === 'private' ? 'Private' : 'Public'}
@@ -29,24 +21,24 @@ export const RoomSettings = () => {
       </div>
 
       <div className="mt-4">
-        <p className="font-label text-sm font-semibold text-cream/75 light:text-slate-700">Word categories</p>
+        <p className="font-label text-sm font-semibold text-cream/75 light:text-slate-700">Word pack</p>
         <div className="mt-2 flex flex-wrap gap-2">
-          {categories.map((category) => {
-            const selected = roomSettings.categories.includes(category);
+          {WORD_PACK_OPTIONS.map((pack) => {
+            const selected = roomSettings.wordPack === pack.id;
 
             return (
               <button
-                key={category}
+                key={pack.id}
                 type="button"
                 aria-pressed={selected}
-                onClick={() => toggleCategory(category)}
+                onClick={() => updateRoomSettings({ wordPack: pack.id })}
                 className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
                   selected
                     ? 'border-saffron/50 bg-saffron/15 text-orange-100 light:text-orange-700'
                     : 'border-white/10 bg-white/5 text-cream/60 hover:border-white/25 light:text-slate-600'
                 }`}
               >
-                {category}
+                {pack.label}
               </button>
             );
           })}

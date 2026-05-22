@@ -5,15 +5,29 @@ import { useGame } from '../../hooks/useGame.js';
 import { useSocket } from '../../hooks/useSocket.js';
 import { SOCKET_EVENTS } from '../../services/socket.js';
 import { floatingReaction } from '../../utils/animations.js';
+import { useToast } from '../ui/Toast.jsx';
 
 export const ReactionRail = () => {
   const { user } = useAuth();
-  const { reactions, emojiOptions, addReaction } = useGame();
-  const { emit } = useSocket();
+  const { reactions, emojiOptions } = useGame();
+  const { emit, connected } = useSocket();
+  const { showToast } = useToast();
 
   const sendReaction = async (emoji) => {
-    addReaction({ emoji, player: user });
-    await emit(SOCKET_EVENTS.EMOJI_REACTION, { emoji, playerId: user.id });
+    if (!user?.id) {
+      showToast({ type: 'warning', title: 'Sign in to react', message: 'Log in to send reactions.' });
+      return;
+    }
+    if (!connected) {
+      showToast({ type: 'warning', title: 'Socket offline', message: 'Reconnect to send reactions.' });
+      return;
+    }
+
+    try {
+      await emit(SOCKET_EVENTS.EMOJI_REACTION, { emoji, playerId: user.id });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Reaction failed', message: error.message });
+    }
   };
 
   return (

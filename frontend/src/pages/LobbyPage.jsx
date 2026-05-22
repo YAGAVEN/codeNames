@@ -14,15 +14,16 @@ import { useToast } from '../components/ui/Toast.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useGame } from '../hooks/useGame.js';
 import { useSocket } from '../hooks/useSocket.js';
+import { fetchRoomByCode } from '../services/api.js';
 import { SOCKET_EVENTS } from '../services/socket.js';
 
 const tabs = ['Teams', 'Chat', 'Settings'];
 
 const LobbyPage = () => {
-  const { roomCode = 'IND-2048' } = useParams();
+  const { roomCode } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { players, readyPlayers, roomSettings, toggleReady, startGame } = useGame();
+  const { players, readyPlayers, roomSettings, toggleReady, startGame, setRoomState } = useGame();
   const { emit, connected, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('Teams');
@@ -36,24 +37,41 @@ const LobbyPage = () => {
     [players]
   );
 
-  const ready = readyPlayers.includes(user.id);
+  const ready = user?.id ? readyPlayers.includes(user.id) : false;
 
   const handleReady = async () => {
-    toggleReady(user.id);
-    await emit(SOCKET_EVENTS.PLAYER_READY, { playerId: user.id, ready: !ready });
+    if (!user?.id) {
+      showToast({
+        type: 'warning',
+        title: 'Sign in to ready up',
+        message: 'Log in to toggle your ready status for this room.'
+      });
+      return;
+    }
+
+    try {
+      toggleReady(user.id);
+      await emit(SOCKET_EVENTS.PLAYER_READY, { playerId: user.id, ready: !ready });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Ready update failed', message: error.message });
+    }
   };
 
   const handleStart = async () => {
-    startGame();
-    await emit(SOCKET_EVENTS.GAME_STARTED, { roomCode });
-    navigate(`/game/${roomCode}`);
+    try {
+      startGame();
+      await emit(SOCKET_EVENTS.GAME_STARTED, { roomCode, wordPack: roomSettings.wordPack || 'india' });
+      navigate(roomCode ? `/game/${roomCode}` : '/game');
+    } catch (error) {
+      showToast({ type: 'error', title: 'Game start failed', message: error.message });
+    }
   };
 
   const handleJoinTeam = (team) => {
     showToast({
       type: 'info',
-      title: 'Team switch mocked',
-      message: `Backend will move you to ${team} when room APIs are connected.`
+      title: 'Team selection locked',
+      message: `Team assignments are handled by the room host for ${team}.`
     });
   };
 
@@ -67,8 +85,28 @@ const LobbyPage = () => {
   };
 
   useEffect(() => {
-    setRoomCode(roomCode);
-  }, [roomCode, setRoomCode]);
+    setRoomCode(roomCode || '');
+    if (!roomCode) {
+      return undefined;
+    }
+
+    let active = true;
+    fetchRoomByCode(roomCode)
+      .then((room) => {
+        if (active) {
+          setRoomState(room);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          showToast({ type: 'error', title: 'Room load failed', message: error.message });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [roomCode, setRoomCode, setRoomState, showToast]);
 
   return (
     <div className="space-y-5">
@@ -77,11 +115,11 @@ const LobbyPage = () => {
           <div>
             <Badge tone={connected ? 'emerald' : 'red'}>
               <Radio className="h-3.5 w-3.5" aria-hidden="true" />
-              {connected ? 'Socket mock online' : 'Reconnecting'}
+              {connected ? 'Socket online' : 'Reconnecting'}
             </Badge>
             <h1 className="mt-3 font-heading text-4xl font-bold text-cream light:text-slate-900">Multiplayer Lobby</h1>
             <p className="text-cream/65 light:text-slate-600">
-              Room {roomCode} • {players.length} players • timer {roomSettings.timerLength}s
+              {roomCode ? `Room ${roomCode}` : 'Lobby'} • {players.length} players • timer {roomSettings.timerLength}s
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">

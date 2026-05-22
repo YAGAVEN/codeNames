@@ -1,14 +1,23 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/context/AuthContext.jsx
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from 'react';
-import { mockPlayers } from '../data/mockPlayers.js';
-import { loginUser, registerUser } from '../services/api.js';
+import {
+  clearStoredToken,
+  completeOAuthLogin,
+  fetchCurrentUser,
+  getGoogleLoginUrl,
+  getStoredToken,
+  loginUser,
+  logoutUser,
+  registerUser
+} from '../services/api.js';
 
 const AuthContext = createContext(null);
+const storedToken = getStoredToken();
 
 const initialState = {
-  user: mockPlayers[0],
-  token: 'mock-token-codenames-india',
-  status: 'authenticated',
+  user: null,
+  token: storedToken,
+  status: storedToken ? 'loading' : 'guest',
   theme: 'dark',
   festivalTheme: 'diwali',
   language: 'en',
@@ -27,6 +36,8 @@ const authReducer = (state, action) => {
         user: action.payload.user,
         token: action.payload.token
       };
+    case 'AUTH_FAILURE':
+      return { ...state, status: 'guest', user: null, token: null };
     case 'AUTH_LOGOUT':
       return { ...state, status: 'guest', user: null, token: null };
     case 'SET_THEME':
@@ -50,6 +61,32 @@ export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
   useEffect(() => {
+    const token = getStoredToken();
+    let active = true;
+
+    if (!token) {
+      return undefined;
+    }
+
+    fetchCurrentUser()
+      .then((user) => {
+        if (active) {
+          dispatch({ type: 'AUTH_SUCCESS', payload: { token, user } });
+        }
+      })
+      .catch(() => {
+        clearStoredToken();
+        if (active) {
+          dispatch({ type: 'AUTH_FAILURE' });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     document.documentElement.classList.toggle('dark', state.theme === 'dark');
     document.documentElement.classList.toggle('light', state.theme === 'light');
     document.documentElement.dataset.festival = state.festivalTheme;
@@ -57,16 +94,55 @@ export const AuthProvider = ({ children }) => {
 
   const login = useCallback(async (credentials) => {
     dispatch({ type: 'AUTH_LOADING' });
-    const response = await loginUser(credentials);
-    dispatch({ type: 'AUTH_SUCCESS', payload: response });
-    return response;
+    try {
+      const response = await loginUser(credentials);
+      dispatch({ type: 'AUTH_SUCCESS', payload: response });
+      return response;
+    } catch (error) {
+      dispatch({ type: 'AUTH_FAILURE' });
+      throw error;
+    }
   }, []);
 
   const register = useCallback(async (payload) => {
     dispatch({ type: 'AUTH_LOADING' });
-    const response = await registerUser(payload);
-    dispatch({ type: 'AUTH_SUCCESS', payload: response });
-    return response;
+    try {
+      const response = await registerUser(payload);
+      dispatch({ type: 'AUTH_SUCCESS', payload: response });
+      return response;
+    } catch (error) {
+      dispatch({ type: 'AUTH_FAILURE' });
+      throw error;
+    }
+  }, []);
+
+  const loginWithGoogle = useCallback(async () => {
+    dispatch({ type: 'AUTH_LOADING' });
+    try {
+      const url = await getGoogleLoginUrl();
+      window.location.assign(url);
+      return url;
+    } catch (error) {
+      dispatch({ type: 'AUTH_FAILURE' });
+      throw error;
+    }
+  }, []);
+
+  const completeOAuth = useCallback(async (payload) => {
+    dispatch({ type: 'AUTH_LOADING' });
+    try {
+      const response = await completeOAuthLogin(payload);
+      dispatch({ type: 'AUTH_SUCCESS', payload: response });
+      return response;
+    } catch (error) {
+      dispatch({ type: 'AUTH_FAILURE' });
+      throw error;
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    logoutUser();
+    dispatch({ type: 'AUTH_LOGOUT' });
   }, []);
 
   const value = useMemo(
@@ -74,7 +150,9 @@ export const AuthProvider = ({ children }) => {
       ...state,
       login,
       register,
-      logout: () => dispatch({ type: 'AUTH_LOGOUT' }),
+      loginWithGoogle,
+      completeOAuth,
+      logout,
       setTheme: (theme) => dispatch({ type: 'SET_THEME', payload: theme }),
       setFestivalTheme: (theme) => dispatch({ type: 'SET_FESTIVAL', payload: theme }),
       setLanguage: (language) => dispatch({ type: 'SET_LANGUAGE', payload: language }),
@@ -82,7 +160,7 @@ export const AuthProvider = ({ children }) => {
       setNotificationsEnabled: (enabled) => dispatch({ type: 'SET_NOTIFICATIONS', payload: enabled }),
       updateProfile: (profile) => dispatch({ type: 'UPDATE_PROFILE', payload: profile })
     }),
-    [login, register, state]
+    [completeOAuth, login, loginWithGoogle, logout, register, state]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

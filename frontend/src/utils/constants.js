@@ -27,9 +27,9 @@ export const ROUTES = [
 ];
 
 export const GAME_ROUTES = [
-  { label: 'Lobby', path: '/lobby/IND-2048' },
-  { label: 'Game', path: '/game/IND-2048' },
-  { label: 'Spymaster', path: '/spymaster/IND-2048' },
+  { label: 'Lobby', path: '/lobby' },
+  { label: 'Game', path: '/game' },
+  { label: 'Spymaster', path: '/spymaster' },
   { label: 'Results', path: '/results' }
 ];
 
@@ -48,13 +48,21 @@ export const LANGUAGES = [
 ];
 
 export const DEFAULT_ROOM_SETTINGS = {
-  categories: ['Bollywood', 'Cricket', 'Indian Food', 'Cities', 'Festivals'],
+  wordPack: 'india',
   timerLength: 60,
   maxTeamSize: 8,
   visibility: 'public',
   passwordEnabled: false,
   spectatorMode: true
 };
+
+export const WORD_PACK_OPTIONS = [
+  { id: 'india', label: 'India' },
+  { id: 'bollywood', label: 'Bollywood' },
+  { id: 'cricket', label: 'Cricket' },
+  { id: 'festivals', label: 'Festivals' },
+  { id: 'food', label: 'Food' }
+];
 
 export const EMOJI_REACTIONS = ['🔥', '👏', '🤯', '😂', '🏏', '🪔', '💙', '🥳'];
 

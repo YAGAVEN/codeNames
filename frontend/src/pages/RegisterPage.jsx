@@ -13,9 +13,9 @@ const RegisterPage = () => {
   const { register, status } = useAuth();
   const { showToast } = useToast();
   const [form, setForm] = useState({
-    name: 'Aditi Verma',
-    email: 'aditi@codenames.in',
-    password: 'rangoli88'
+    name: '',
+    email: '',
+    password: ''
   });
 
   const checks = useMemo(
@@ -36,9 +36,13 @@ const RegisterPage = () => {
       return;
     }
 
-    await register(form);
-    showToast({ type: 'success', title: 'Account created', message: 'Your first Chai Master badge is unlocked.' });
-    navigate('/dashboard');
+    try {
+      await register(form);
+      showToast({ type: 'success', title: 'Account created', message: 'Your first Chai Master badge is unlocked.' });
+      navigate('/dashboard');
+    } catch (error) {
+      showToast({ type: 'error', title: 'Signup failed', message: error.message });
+    }
   };
 
   return (

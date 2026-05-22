@@ -39,6 +39,28 @@ def enable_rls(table: str) -> None:
 def upgrade() -> None:
     """Create tables, indexes, triggers, and Supabase RLS policies."""
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+    op.execute("CREATE SCHEMA IF NOT EXISTS auth")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_proc p
+                JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'auth' AND p.proname = 'uid'
+            ) THEN
+                EXECUTE $fn$
+                CREATE FUNCTION auth.uid()
+                RETURNS uuid
+                LANGUAGE sql
+                STABLE
+                AS $body$ SELECT NULL::uuid $body$;
+                $fn$;
+            END IF;
+        END $$;
+        """
+    )
 
     op.create_table(
         "users",
@@ -279,9 +301,16 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        CREATE TRIGGER on_auth_user_created
-        AFTER INSERT ON auth.users
-        FOR EACH ROW EXECUTE FUNCTION public.handle_auth_user_created();
+        DO $$
+        BEGIN
+            IF to_regclass('auth.users') IS NOT NULL THEN
+                EXECUTE $trg$
+                CREATE TRIGGER on_auth_user_created
+                AFTER INSERT ON auth.users
+                FOR EACH ROW EXECUTE FUNCTION public.handle_auth_user_created();
+                $trg$;
+            END IF;
+        END $$;
         """
     )
 

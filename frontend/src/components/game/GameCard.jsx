@@ -20,7 +20,9 @@ const spymasterPips = {
 
 export const GameCard = ({ card, index, spymaster = false, disabled = false, onReveal }) => {
   const revealed = card.revealed || spymaster;
-  const label = `${card.word}, ${card.category}${card.revealed ? ', revealed' : ''}`;
+  const type = card.type || CARD_TYPES.HIDDEN;
+  const category = card.category || 'Board';
+  const label = `${card.word}, ${category}${card.revealed ? ', revealed' : ''}`;
 
   return (
     <button
@@ -39,26 +41,26 @@ export const GameCard = ({ card, index, spymaster = false, disabled = false, onR
         <div className="backface-hidden glass-panel absolute inset-0 flex flex-col justify-between rounded-xl border border-white/12 p-2.5 text-left transition hover:border-saffron/50 hover:shadow-saffron sm:p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-cream/60">{String(index + 1).padStart(2, '0')}</span>
-            {spymaster ? <span className={cn('h-3 w-3 rounded-full', spymasterPips[card.type])} /> : <Eye className="h-3.5 w-3.5 text-saffron" aria-hidden="true" />}
+            {spymaster ? <span className={cn('h-3 w-3 rounded-full', spymasterPips[type] || 'bg-white/30')} /> : <Eye className="h-3.5 w-3.5 text-saffron" aria-hidden="true" />}
           </div>
           <span className="break-words text-center font-heading text-[clamp(0.78rem,2.6vw,1.25rem)] font-bold leading-tight text-cream light:text-slate-900">
             {card.word}
           </span>
           <span className="truncate text-center text-[10px] font-semibold uppercase tracking-normal text-cream/40 light:text-slate-500">
-            {card.category}
+            {category}
           </span>
         </div>
 
         <div
           className={cn(
             'backface-hidden absolute inset-0 flex rotate-y-180 flex-col items-center justify-center rounded-xl border p-2 text-center',
-            revealedStyles[card.type]
+            revealedStyles[type] || 'border-white/15 bg-white/10 text-cream'
           )}
         >
-          {card.type === CARD_TYPES.ASSASSIN ? <Skull className="mb-1 h-5 w-5" aria-hidden="true" /> : null}
+          {type === CARD_TYPES.ASSASSIN ? <Skull className="mb-1 h-5 w-5" aria-hidden="true" /> : null}
           <span className="break-words font-heading text-[clamp(0.78rem,2.6vw,1.22rem)] font-bold leading-tight">{card.word}</span>
           <span className="mt-1 text-[10px] font-bold uppercase tracking-normal opacity-70">
-            {card.type === CARD_TYPES.ASSASSIN ? 'Assassin' : `${card.type} card`}
+            {type === CARD_TYPES.ASSASSIN ? 'Assassin' : `${type} card`}
           </span>
         </div>
       </motion.div>

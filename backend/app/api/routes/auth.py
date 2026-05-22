@@ -1,5 +1,8 @@
 # backend/app/api/routes/auth.py
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Cookie, Depends, Query, Request, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.db_deps import get_db
@@ -20,6 +23,14 @@ from app.utils.responses import success_response
 
 router = APIRouter()
 settings = get_settings()
+
+
+def _trusted_frontend_url(request: Request) -> str:
+    """Prefer the calling frontend origin when it is explicitly allowed."""
+    origin = request.headers.get("origin")
+    if origin and origin in settings.ALLOWED_ORIGINS:
+        return origin.rstrip("/")
+    return settings.FRONTEND_URL.rstrip("/")
 
 
 def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
@@ -57,7 +68,7 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Register user through Supabase Auth and issue app tokens."""
-    tokens = await AuthService(db, request.app.state.redis, settings).register(payload)
+    tokens = await AuthService(db, request.app.state.redis, settings, _trusted_frontend_url(request)).register(payload)
     _set_refresh_cookie(response, tokens.refresh_token)
     return success_response(_token_payload(tokens))
 
@@ -106,7 +117,7 @@ async def logout(
 @router.post("/forgot-password", response_model=EnvelopeSchema[MessageResponse], summary="Forgot password")
 async def forgot_password(payload: ForgotPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     """Queue a password-reset email when the account exists."""
-    await AuthService(db, request.app.state.redis, settings).forgot_password(str(payload.email))
+    await AuthService(db, request.app.state.redis, settings, _trusted_frontend_url(request)).forgot_password(str(payload.email))
     return success_response(MessageResponse(message="If the account exists, a reset email will be sent"))
 
 
@@ -120,18 +131,30 @@ async def reset_password(payload: ResetPasswordRequest, request: Request, db: As
 @router.get("/google", response_model=EnvelopeSchema[GoogleOAuthUrlResponse], summary="Start Google OAuth")
 async def google(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     """Return Supabase Google OAuth redirect URL."""
-    url = await AuthService(db, request.app.state.redis, settings).google_oauth_url()
+    url = await AuthService(db, request.app.state.redis, settings, _trusted_frontend_url(request)).google_oauth_url()
     return success_response(GoogleOAuthUrlResponse(url=url))
 
 
-@router.get("/google/callback", response_model=EnvelopeSchema[TokenPairResponse], summary="Google OAuth callback")
+@router.get("/google/callback", summary="Google OAuth callback")
 async def google_callback(
     request: Request,
-    response: Response,
     code: str = Query(default=""),
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Exchange Supabase OAuth callback code for app tokens."""
+) -> RedirectResponse:
+    """Exchange Supabase OAuth callback code and send the browser back to React."""
+    if not code:
+        fragment = urlencode({"error": "missing_oauth_code"})
+        return RedirectResponse(url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#{fragment}", status_code=303)
+
     tokens = await AuthService(db, request.app.state.redis, settings).handle_google_callback(code)
-    _set_refresh_cookie(response, tokens.refresh_token)
-    return success_response(_token_payload(tokens))
+    payload = _token_payload(tokens)
+    fragment = urlencode(
+        {
+            "access_token": payload.access_token,
+            "expires_in": payload.expires_in,
+            "user_id": str(payload.user_id),
+        }
+    )
+    redirect = RedirectResponse(url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#{fragment}", status_code=303)
+    _set_refresh_cookie(redirect, tokens.refresh_token)
+    return redirect

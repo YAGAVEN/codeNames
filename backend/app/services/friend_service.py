@@ -1,4 +1,6 @@
 # backend/app/services/friend_service.py
+from __future__ import annotations
+
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
