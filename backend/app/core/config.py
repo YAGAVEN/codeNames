@@ -1,10 +1,24 @@
 # backend/app/core/config.py
+import logging
 from functools import lru_cache
 from typing import Annotated, Literal
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from pydantic import AnyHttpUrl, Field, field_validator
+from pydantic import AliasChoices, AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from supabase import Client, create_client
+
+logger = logging.getLogger(__name__)
+
+
+def _redact_database_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme.startswith("sqlite"):
+        return value
+    netloc = parsed.hostname or ""
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunparse((parsed.scheme, netloc, parsed.path, "", parsed.query, ""))
 
 
 class Settings(BaseSettings):
@@ -27,7 +41,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     PASSWORD_RESET_TOKEN_MINUTES: int = 30
     ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
-    DATABASE_URL: str
+    DATABASE_URL: str = Field(
+        validation_alias=AliasChoices("DATABASE_URL", "RENDER_DATABASE_URL", "RENDER_DB_URL", "POSTGRES_URL"),
+    )
     TEST_DATABASE_URL: str = "sqlite+aiosqlite:///:memory:"
     REDIS_URL: str = "redis://localhost:6379/0"
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
@@ -60,15 +76,40 @@ class Settings(BaseSettings):
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def coerce_asyncpg_url(cls, value: str) -> str:
-        """Ensure asyncpg driver is used for async SQLAlchemy engines."""
-        if value.startswith("postgresql+asyncpg://"):
-            return value
-        if value.startswith("postgres://"):
-            return "postgresql+asyncpg://" + value[len("postgres://") :]
-        if value.startswith("postgresql://"):
-            return "postgresql+asyncpg://" + value[len("postgresql://") :]
-        return value
+    def normalize_database_url(cls, value: str | None) -> str:
+        """Normalize database URLs to asyncpg and enforce Supabase SSL."""
+        if not value:
+            raise ValueError("DATABASE_URL is required")
+        raw = str(value).strip()
+        normalized = raw
+        if raw.startswith("postgresql+asyncpg://"):
+            normalized = raw
+        elif raw.startswith(("postgresql+psycopg2://", "postgresql+psycopg://")):
+            raise ValueError("DATABASE_URL must use asyncpg (postgresql+asyncpg://)")
+        elif raw.startswith("postgres://"):
+            normalized = "postgresql+asyncpg://" + raw[len("postgres://") :]
+        elif raw.startswith("postgresql://"):
+            normalized = "postgresql+asyncpg://" + raw[len("postgresql://") :]
+        elif raw.startswith(("sqlite+aiosqlite://", "sqlite://")):
+            return raw
+        else:
+            raise ValueError("DATABASE_URL must start with postgresql or sqlite")
+
+        parsed = urlparse(normalized)
+        if not parsed.hostname:
+            raise ValueError("DATABASE_URL must include a hostname")
+        qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        ssl_enforced = False
+        if parsed.hostname.endswith("supabase.co") and "ssl" not in qs and "sslmode" not in qs:
+            qs["ssl"] = "require"
+            ssl_enforced = True
+            normalized = urlunparse(parsed._replace(query=urlencode(qs)))
+        if normalized != raw:
+            logger.info(
+                "database_url_normalized",
+                extra={"database_url": _redact_database_url(normalized), "ssl_enforced": ssl_enforced},
+            )
+        return normalized
 
     @property
     def is_production(self) -> bool:
