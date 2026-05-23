@@ -1,5 +1,6 @@
 # backend/app/services/auth_service.py
 import asyncio
+import re
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -33,6 +34,15 @@ class AuthTokens:
     refresh_token: str
 
 
+@dataclass(frozen=True)
+class SupabaseProfile:
+    """Minimal Supabase Auth profile needed for local sync."""
+
+    user_id: UUID
+    email: str
+    username: str | None = None
+
+
 class AuthService:
     """Supabase-backed auth orchestration with local JWT issuance."""
 
@@ -56,10 +66,15 @@ class AuthService:
 
     async def login(self, payload: LoginRequest) -> AuthTokens:
         """Authenticate with Supabase and issue application JWTs."""
-        await self._supabase_sign_in(payload)
+        supabase_profile = await self._supabase_sign_in(payload)
         user = await self.users.get_by_email(str(payload.email))
         if user is None:
-            raise AuthenticationError("User profile is not synced yet")
+            if supabase_profile is None:
+                raise AuthenticationError("User profile is not synced yet")
+            username = self._build_username(supabase_profile)
+            user = await self.users.create(username, supabase_profile.email, supabase_profile.user_id)
+            await self.users.commit()
+            await self.users.refresh(user)
         if user.online_status.value == "banned":
             raise AuthenticationError("Account is banned")
         return await self._issue_tokens(user.id, user.role)
@@ -168,11 +183,49 @@ class AuthService:
         user_id = getattr(getattr(result, "user", None), "id", None)
         return UUID(str(user_id)) if user_id else None
 
-    async def _supabase_sign_in(self, payload: LoginRequest) -> None:
-        """Call Supabase Auth sign-in when configured."""
+    async def _supabase_sign_in(self, payload: LoginRequest) -> SupabaseProfile | None:
+        """Call Supabase Auth sign-in when configured and return the profile."""
         client = get_supabase_anon_client()
         if client is None:
             if self.settings.is_production:
                 raise AuthenticationError("Supabase Auth is not configured")
-            return
-        await asyncio.to_thread(client.auth.sign_in_with_password, {"email": str(payload.email), "password": payload.password})
+            return None
+        result = await asyncio.to_thread(
+            client.auth.sign_in_with_password,
+            {"email": str(payload.email), "password": payload.password},
+        )
+        return self._extract_supabase_profile(result)
+
+    def _extract_supabase_profile(self, result: object) -> SupabaseProfile | None:
+        """Extract minimal user info from Supabase auth responses."""
+        if isinstance(result, dict):
+            user = result.get("user")
+        else:
+            user = getattr(result, "user", None)
+        if not user:
+            return None
+        if isinstance(user, dict):
+            user_id = user.get("id")
+            email = user.get("email")
+            metadata = user.get("user_metadata") or {}
+        else:
+            user_id = getattr(user, "id", None)
+            email = getattr(user, "email", None)
+            metadata = getattr(user, "user_metadata", {}) or {}
+        if not user_id or not email:
+            return None
+        username = None
+        if isinstance(metadata, dict):
+            username = metadata.get("username") or metadata.get("full_name")
+        return SupabaseProfile(user_id=UUID(str(user_id)), email=str(email), username=str(username) if username else None)
+
+    def _build_username(self, profile: SupabaseProfile) -> str:
+        """Generate a deterministic username for synced Supabase users."""
+        base = profile.username or profile.email.split("@")[0] or "player"
+        slug = re.sub(r"[^a-z0-9_]+", "_", base.strip().lower()).strip("_") or "player"
+        suffix = str(profile.user_id).replace("-", "")[:6]
+        max_base_len = max(3, 24 - (len(suffix) + 1))
+        if len(slug) < 3:
+            slug = f"{slug}player"
+        slug = slug[:max_base_len]
+        return f"{slug}_{suffix}"

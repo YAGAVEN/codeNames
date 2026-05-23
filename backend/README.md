@@ -6,9 +6,21 @@ Async FastAPI backend for Codenames India with PostgreSQL/Supabase, Redis-backed
 ## Quick Start
 
 1. Copy `.env.example` to `.env` and fill Supabase, JWT, database, and Redis values.
+   - Ensure `ALLOWED_ORIGINS` includes your frontend origin (for example `https://code-names-theta.vercel.app`).
 2. Run `docker compose up --build`.
 3. Apply migrations with `docker compose run --rm api alembic upgrade head`.
 4. Open `http://localhost:8000/docs`.
+
+## Supabase Database Setup
+
+If you want the tables inside your Supabase project, set `DATABASE_URL` to your Supabase Postgres connection string (use the `postgres` role and include `?ssl=require` for asyncpg), then run:
+
+```bash
+alembic upgrade head
+```
+
+The migration creates the public tables, RLS policies, and the `auth.users` trigger that keeps `public.users` in sync.
+The backend expects the asyncpg driver; plain `postgresql://` URLs are automatically upgraded to `postgresql+asyncpg://` at runtime.
 
 ## Production (Docker)
 

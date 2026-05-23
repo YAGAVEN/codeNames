@@ -58,6 +58,18 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def coerce_asyncpg_url(cls, value: str) -> str:
+        """Ensure asyncpg driver is used for async SQLAlchemy engines."""
+        if value.startswith("postgresql+asyncpg://"):
+            return value
+        if value.startswith("postgres://"):
+            return "postgresql+asyncpg://" + value[len("postgres://") :]
+        if value.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + value[len("postgresql://") :]
+        return value
+
     @property
     def is_production(self) -> bool:
         """Return whether the app is running with production defaults."""
