@@ -10,7 +10,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.api.routes import admin, auth, friends, frontend, matches, rooms, users
 from app.core.config import get_settings
-from app.core.events import shutdown, startup
+from app.core.events import get_app_state, shutdown, startup
 from app.middleware.auth import OptionalAuthMiddleware
 from app.middleware.cors import setup_cors
 from app.middleware.logging import RequestLoggingMiddleware
@@ -24,6 +24,18 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 configure_logging(settings.LOG_LEVEL)
+
+
+def _find_grouped_app_error(exc: BaseException) -> AppError | None:
+    """Extract expected app errors wrapped by Starlette/anyio ExceptionGroup."""
+    if isinstance(exc, AppError):
+        return exc
+    if isinstance(exc, BaseExceptionGroup):
+        for child in exc.exceptions:
+            found = _find_grouped_app_error(child)
+            if found is not None:
+                return found
+    return None
 
 
 @asynccontextmanager
@@ -82,9 +94,21 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 async def unhandled_error_handler(request: Request, exc: Exception) -> ORJSONResponse:
     """Return unexpected failures as JSON so clients do not see opaque fetch errors."""
     request_id = getattr(request.state, "request_id", None)
+    grouped_app_error = _find_grouped_app_error(exc)
+    if grouped_app_error is not None:
+        return ORJSONResponse(
+            status_code=grouped_app_error.status_code,
+            content=error_response(grouped_app_error.code, grouped_app_error.message, {"request_id": request_id}),
+        )
     logger.exception(
         "unhandled_request_error",
-        extra={"request_id": request_id, "method": request.method, "path": request.url.path},
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "exception_type": type(exc).__name__,
+            "exception_group_size": len(exc.exceptions) if isinstance(exc, BaseExceptionGroup) else None,
+        },
     )
     return ORJSONResponse(
         status_code=500,
@@ -99,7 +123,7 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> ORJSONRes
 @app.get("/health", summary="Health check")
 async def health() -> dict[str, object]:
     """Return API liveness information."""
-    return success_response({"status": "ok", "env": settings.APP_ENV})
+    return success_response({"status": "ok", "env": settings.APP_ENV, **get_app_state(fastapi_app)})
 
 
 @app.get("/metrics", summary="Prometheus metrics")

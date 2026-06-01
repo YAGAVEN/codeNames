@@ -1,12 +1,17 @@
 # backend/app/game/word_service.py
 import asyncio
 import json
+import logging
 from typing import Any
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from app.core.config import Settings, get_supabase_admin_client
+from app.core.redis import disconnect_redis_pool
 from app.utils.exceptions import NotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_WORDS = [
@@ -43,7 +48,12 @@ class WordService:
     async def load_word_pack(self, pack_name: str) -> list[str]:
         """Load a word pack from Redis cache, Supabase Storage, or built-in fallback."""
         key = f"wordpack:{pack_name}"
-        cached = await self.redis.get(key)
+        try:
+            cached = await self.redis.get(key)
+        except RedisError:
+            logger.warning("word_pack_cache_read_failed", extra={"pack_name": pack_name}, exc_info=True)
+            await disconnect_redis_pool(self.redis)
+            cached = None
         if cached:
             return list(json.loads(cached))
 
@@ -55,7 +65,11 @@ class WordService:
         if len(set(words)) < 100:
             raise ValueError("Word pack must contain at least 100 unique words")
 
-        await self.redis.setex(key, 3600, json.dumps(words))
+        try:
+            await self.redis.setex(key, 3600, json.dumps(words))
+        except RedisError:
+            logger.warning("word_pack_cache_write_failed", extra={"pack_name": pack_name}, exc_info=True)
+            await disconnect_redis_pool(self.redis)
         return list(words)
 
     async def signed_pack_url(self, pack_name: str, expires_in: int = 900) -> str | None:

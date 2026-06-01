@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     )
     TEST_DATABASE_URL: str = "sqlite+aiosqlite:///:memory:"
     REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_CONNECT_TIMEOUT_SECONDS: float = 2.0
+    REDIS_SOCKET_TIMEOUT_SECONDS: float = 2.0
+    REDIS_HEALTH_CHECK_INTERVAL_SECONDS: int = 30
+    REDIS_RECONNECT_INTERVAL_SECONDS: int = 5
+    REDIS_STARTUP_RETRIES: int = 3
+    REDIS_STARTUP_RETRY_DELAY_SECONDS: float = 1.0
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
     SUPABASE_URL: AnyHttpUrl | None = None

@@ -1,17 +1,22 @@
 # backend/app/services/room_service.py
+import logging
 import secrets
 import string
 from uuid import UUID
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.redis import disconnect_redis_pool
 from app.core.security import verify_password
 from app.repositories.room_player_repository import RoomPlayerRepository
 from app.repositories.room_repository import RoomRepository
 from app.schemas.rooms import PublicRoomRead, RoomCreateRequest, RoomJoinRequest, RoomPlayerRead, RoomRead
 from app.utils.constants import PlayerRole, RoomStatus, Team
 from app.utils.exceptions import AuthorizationError, ConflictError, NotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 class RoomService:
@@ -158,4 +163,12 @@ class RoomService:
     async def _cache_membership(self, room_id: UUID, user_id: UUID, team: Team, role: PlayerRole) -> None:
         """Cache trusted team/role membership for WebSocket anti-cheat checks."""
         if self.redis is not None:
-            await self.redis.hset(f"room:membership:{room_id}", str(user_id), f"{team.value}:{role.value}")
+            try:
+                await self.redis.hset(f"room:membership:{room_id}", str(user_id), f"{team.value}:{role.value}")
+            except RedisError:
+                logger.warning(
+                    "room_membership_cache_failed",
+                    extra={"room_id": str(room_id), "user_id": str(user_id)},
+                    exc_info=True,
+                )
+                await disconnect_redis_pool(self.redis)

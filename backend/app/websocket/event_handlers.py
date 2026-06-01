@@ -1,12 +1,15 @@
 # backend/app/websocket/event_handlers.py
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from app.core.config import Settings
+from app.core.redis import disconnect_redis_pool
 from app.game.game_manager import GameManager
 from app.game.word_service import WordService
 from app.schemas.websocket import ClientEvent
@@ -14,6 +17,8 @@ from app.utils.constants import ChatType, PlayerRole, Team
 from app.utils.exceptions import AppError, GameRuleError
 from app.utils.validators import sanitise_chat_message
 from app.websocket.connection_manager import ConnectionManager
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -52,7 +57,7 @@ async def handle_event(context: EventContext, payload: dict[str, Any]) -> None:
 
 async def _membership(context: EventContext) -> tuple[Team, PlayerRole]:
     """Read server-stored team and role for the connected user."""
-    raw = await context.redis.hget(f"room:membership:{context.room_id}", context.user_id)
+    raw = await _redis_call(context, "membership_read", "hget", f"room:membership:{context.room_id}", context.user_id)
     if raw is None:
         return Team.SPECTATOR, PlayerRole.OPERATIVE
     data = raw.decode() if isinstance(raw, bytes) else raw
@@ -116,7 +121,7 @@ def _public_state(state: dict[str, Any]) -> dict[str, Any]:
 
 async def _send_spymaster_board(context: EventContext, state: dict[str, Any]) -> None:
     """Send the hidden board only to sockets cached as spymasters."""
-    memberships = await context.redis.hgetall(f"room:membership:{context.room_id}")
+    memberships = await _redis_call(context, "membership_list", "hgetall", f"room:membership:{context.room_id}")
     for raw_user_id, raw_value in memberships.items():
         user_id = raw_user_id.decode() if isinstance(raw_user_id, bytes) else str(raw_user_id)
         value = raw_value.decode() if isinstance(raw_value, bytes) else str(raw_value)
@@ -139,12 +144,19 @@ async def create_room(context: EventContext, data: dict[str, Any]) -> None:
 @websocket_handler("join_room")
 async def join_room(context: EventContext, data: dict[str, Any]) -> None:
     """Join room presence and store realtime membership metadata."""
-    raw = await context.redis.hget(f"room:membership:{context.room_id}", context.user_id)
+    raw = await _redis_call(context, "membership_read", "hget", f"room:membership:{context.room_id}", context.user_id)
     if raw is None:
         # A trusted REST join/team-assignment path should set this hash; unknown users become spectators.
         team = Team.SPECTATOR
         role = PlayerRole.OPERATIVE
-        await context.redis.hset(f"room:membership:{context.room_id}", context.user_id, f"{team.value}:{role.value}")
+        await _redis_call(
+            context,
+            "membership_write",
+            "hset",
+            f"room:membership:{context.room_id}",
+            context.user_id,
+            f"{team.value}:{role.value}",
+        )
     else:
         stored = raw.decode() if isinstance(raw, bytes) else raw
         team_value, role_value = stored.split(":", 1)
@@ -176,7 +188,7 @@ async def leave_room(context: EventContext, data: dict[str, Any]) -> None:
 async def ready_up(context: EventContext, data: dict[str, Any]) -> None:
     """Mark a player ready in Redis for fast lobby checks."""
     ready = bool(data.get("is_ready", True))
-    await context.redis.hset(f"room:ready:{context.room_id}", context.user_id, "1" if ready else "0")
+    await _redis_call(context, "ready_write", "hset", f"room:ready:{context.room_id}", context.user_id, "1" if ready else "0")
     await context.manager.broadcast(context.room_id, "player_joined", {"user_id": context.user_id, "is_ready": ready})
 
 
@@ -266,7 +278,14 @@ async def reconnect_player(context: EventContext, data: dict[str, Any]) -> None:
 @websocket_handler("spectate_game")
 async def spectate_game(context: EventContext, data: dict[str, Any]) -> None:
     """Move a user into spectator presence."""
-    await context.redis.hset(f"room:membership:{context.room_id}", context.user_id, f"{Team.SPECTATOR.value}:{PlayerRole.OPERATIVE.value}")
+    await _redis_call(
+        context,
+        "membership_spectate_write",
+        "hset",
+        f"room:membership:{context.room_id}",
+        context.user_id,
+        f"{Team.SPECTATOR.value}:{PlayerRole.OPERATIVE.value}",
+    )
     await context.manager.broadcast(context.room_id, "player_joined", {"user_id": context.user_id, "team": Team.SPECTATOR.value})
 
 
@@ -275,3 +294,18 @@ async def send_event_error(context: EventContext, exc: Exception) -> None:
     code = exc.code if isinstance(exc, AppError) else "websocket_error"
     message = exc.message if isinstance(exc, AppError) else "Unexpected websocket error"
     await context.manager.send_to_user(context.room_id, context.user_id, "error_message", {"code": code, "message": message})
+
+
+async def _redis_call(context: EventContext, operation: str, method_name: str, *args: Any) -> Any:
+    """Run a required WebSocket Redis operation with controlled failure semantics."""
+    method = getattr(context.redis, method_name)
+    try:
+        return await method(*args)
+    except RedisError as exc:
+        logger.warning(
+            "websocket_event_redis_operation_failed",
+            extra={"operation": operation, "room_id": context.room_id, "user_id": context.user_id},
+            exc_info=True,
+        )
+        await disconnect_redis_pool(context.redis)
+        raise GameRuleError("Realtime state is temporarily unavailable") from exc

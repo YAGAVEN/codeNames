@@ -1,4 +1,5 @@
 # backend/app/core/security.py
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -7,11 +8,14 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from jose import JWTError, jwt
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from app.core.config import get_settings
-from app.utils.exceptions import AuthenticationError
+from app.core.redis import disconnect_redis_pool
+from app.utils.exceptions import AuthenticationError, ServiceUnavailableError
 
 password_hasher = PasswordHasher()
+logger = logging.getLogger(__name__)
 
 
 def hash_password(password: str) -> str:
@@ -57,7 +61,12 @@ async def create_refresh_token(redis: Redis, subject: UUID | str) -> str:
     }
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     ttl = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-    await redis.setex(f"refresh:{jti}", ttl, str(subject))
+    try:
+        await redis.setex(f"refresh:{jti}", ttl, str(subject))
+    except RedisError as exc:
+        logger.error("refresh_token_store_redis_failed", extra={"subject": str(subject)}, exc_info=True)
+        await disconnect_redis_pool(redis)
+        raise ServiceUnavailableError("Session storage is temporarily unavailable") from exc
     return token
 
 
@@ -66,12 +75,22 @@ async def rotate_refresh_token(redis: Redis, token: str) -> tuple[UUID, str]:
     payload = decode_token(token, expected_type="refresh")
     jti = str(payload["jti"])
     subject = UUID(str(payload["sub"]))
-    stored_subject = await redis.get(f"refresh:{jti}")
+    try:
+        stored_subject = await redis.get(f"refresh:{jti}")
+    except RedisError as exc:
+        logger.error("refresh_token_read_redis_failed", extra={"jti": jti}, exc_info=True)
+        await disconnect_redis_pool(redis)
+        raise ServiceUnavailableError("Session storage is temporarily unavailable") from exc
     if stored_subject is None:
         raise AuthenticationError("Refresh token has expired or was already used")
     if stored_subject.decode() != str(subject):
         raise AuthenticationError("Refresh token subject mismatch")
-    await redis.delete(f"refresh:{jti}")
+    try:
+        await redis.delete(f"refresh:{jti}")
+    except RedisError as exc:
+        logger.error("refresh_token_delete_redis_failed", extra={"jti": jti}, exc_info=True)
+        await disconnect_redis_pool(redis)
+        raise ServiceUnavailableError("Session storage is temporarily unavailable") from exc
     return subject, await create_refresh_token(redis, subject)
 
 
@@ -81,7 +100,11 @@ async def revoke_refresh_token(redis: Redis, token: str) -> None:
         payload = decode_token(token, expected_type="refresh")
     except AuthenticationError:
         return
-    await redis.delete(f"refresh:{payload['jti']}")
+    try:
+        await redis.delete(f"refresh:{payload['jti']}")
+    except RedisError:
+        logger.warning("refresh_token_revoke_redis_failed", extra={"jti": str(payload["jti"])}, exc_info=True)
+        await disconnect_redis_pool(redis)
 
 
 def create_password_reset_token(subject: UUID | str) -> str:

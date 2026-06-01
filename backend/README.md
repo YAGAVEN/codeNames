@@ -8,6 +8,7 @@ Async FastAPI backend for Codenames India with PostgreSQL/Supabase, Redis-backed
 1. Copy `.env.example` to `.env` and fill Supabase, JWT, database, and Redis values.
    - Ensure `ALLOWED_ORIGINS` includes your frontend origin (for example `https://code-names-theta.vercel.app`).
    - On Render, set `ALLOWED_ORIGINS` and `FRONTEND_URL` in the service environment; the local `.env` file is not applied unless you explicitly configure it.
+   - On Render or any non-Docker host, set `REDIS_URL` to the managed Redis endpoint. Do not use `redis://localhost:6379/0` in production unless Redis runs in the same container.
 2. Run `docker compose up --build`.
 3. Apply migrations with `docker compose run --rm api alembic upgrade head`.
 4. Open `http://localhost:8000/docs`.

@@ -60,6 +60,7 @@ async def client(db_session: AsyncSession, redis_client: fakeredis.aioredis.Fake
 
     app.dependency_overrides[get_db] = override_get_db
     app.state.redis = redis_client
+    app.state.redis_available = True
     app.state.websocket_manager = SimpleNamespace(settings=get_settings())
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as async_client:
         yield async_client

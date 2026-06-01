@@ -47,6 +47,13 @@ class RateLimitError(AppError):
         super().__init__(message, HTTPStatus.TOO_MANY_REQUESTS, "rate_limited")
 
 
+class ServiceUnavailableError(AppError):
+    """Raised when a required backing service is temporarily unavailable."""
+
+    def __init__(self, message: str = "Service temporarily unavailable") -> None:
+        super().__init__(message, HTTPStatus.SERVICE_UNAVAILABLE, "service_unavailable")
+
+
 class GameRuleError(AppError):
     """Raised when a client attempts an invalid game move."""
 
