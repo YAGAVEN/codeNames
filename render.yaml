@@ -3,7 +3,7 @@ services:
     name: codenames-india-api
     runtime: python
     buildCommand: pip install -r backend/requirements.txt
-    startCommand: cd backend && alembic upgrade head && gunicorn app.main:app -k uvicorn.workers.UvicornWorker --workers 1 --bind 0.0.0.0:$PORT
+    startCommand: PYTHONPATH=backend alembic -c backend/alembic.ini upgrade head && PYTHONPATH=backend gunicorn app.main:app -k uvicorn.workers.UvicornWorker --workers 1 --bind 0.0.0.0:$PORT
     envVars:
       - key: APP_ENV
         value: production
