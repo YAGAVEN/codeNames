@@ -1,4 +1,5 @@
 # backend/app/main.py
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -20,6 +21,7 @@ from app.utils.responses import error_response, success_response
 from app.websocket.room_events import websocket_endpoint
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 configure_logging(settings.LOG_LEVEL)
 
@@ -41,7 +43,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-setup_cors(app, settings)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(OptionalAuthMiddleware)
 app.add_middleware(RateLimitMiddleware, settings=settings)
@@ -77,6 +78,24 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     )
 
 
+@app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception) -> ORJSONResponse:
+    """Return unexpected failures as JSON so clients do not see opaque fetch errors."""
+    request_id = getattr(request.state, "request_id", None)
+    logger.exception(
+        "unhandled_request_error",
+        extra={"request_id": request_id, "method": request.method, "path": request.url.path},
+    )
+    return ORJSONResponse(
+        status_code=500,
+        content=error_response(
+            "internal_server_error",
+            "Internal server error",
+            {"request_id": request_id},
+        ),
+    )
+
+
 @app.get("/health", summary="Health check")
 async def health() -> dict[str, object]:
     """Return API liveness information."""
@@ -93,3 +112,7 @@ async def metrics() -> Response:
 async def websocket_route(websocket: WebSocket, room_id: str) -> None:
     """Authenticate and delegate room WebSocket traffic."""
     await websocket_endpoint(websocket, room_id)
+
+
+fastapi_app = app
+app = setup_cors(fastapi_app, settings)

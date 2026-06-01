@@ -40,7 +40,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     PASSWORD_RESET_TOKEN_MINUTES: int = 30
-    ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
+    ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = [
+        "http://localhost:5173",
+        "https://code-names-theta.vercel.app",
+    ]
+    ALLOWED_ORIGIN_REGEX: str | None = None
     DATABASE_URL: str = Field(
         validation_alias=AliasChoices("DATABASE_URL", "RENDER_DATABASE_URL", "RENDER_DB_URL", "POSTGRES_URL"),
     )

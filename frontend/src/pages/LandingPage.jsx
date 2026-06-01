@@ -24,13 +24,21 @@ const LandingPage = () => {
   useEffect(() => {
     let active = true;
 
-    fetchPublicRooms().then((rooms) => {
-      if (!active) {
-        return;
-      }
-      setActiveRooms(rooms.length);
-      setFeaturedRoom(rooms[0] || null);
-    });
+    fetchPublicRooms()
+      .then((rooms) => {
+        if (!active) {
+          return;
+        }
+        setActiveRooms(rooms.length);
+        setFeaturedRoom(rooms[0] || null);
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setActiveRooms(0);
+        setFeaturedRoom(null);
+      });
 
     return () => {
       active = false;
