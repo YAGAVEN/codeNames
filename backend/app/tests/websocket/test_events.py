@@ -1,9 +1,14 @@
 # backend/app/tests/websocket/test_events.py
-from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
 from app.core.config import get_settings
+from app.db.models.room import Room
+from app.db.models.room_player import RoomPlayer
+from app.db.models.user import User
+from app.game.game_manager import GameManager
+from app.utils.constants import PlayerRole, Team
 from app.websocket.event_handlers import EventContext, handle_event
 
 
@@ -27,21 +32,27 @@ class RecordingManager:
 
 
 @pytest.mark.asyncio
-async def test_websocket_join_start_clue_guess_flow(redis_client) -> None:
+async def test_websocket_join_start_clue_guess_flow(db_session) -> None:
     """WebSocket handlers should route events through the registry and game manager."""
+    user_id = uuid4()
+    room_id = uuid4()
+    room_code = "ROOMWS"
+    db_session.add(User(id=user_id, username="ws_user", email="ws@example.com"))
+    db_session.add(Room(id=room_id, room_code=room_code, host_id=user_id, max_players=8, settings={}, game_state={}))
+    db_session.add(RoomPlayer(room_id=room_id, user_id=user_id, team=Team.RED, role=PlayerRole.SPYMASTER))
+    await db_session.commit()
+
     manager = RecordingManager()
     context = EventContext(
-        room_id="room-ws",
-        user_id="user-1",
+        room_id=room_code,
+        user_id=str(user_id),
         manager=manager,  # type: ignore[arg-type]
-        redis=redis_client,
+        db=db_session,
         settings=get_settings(),
     )
-    await redis_client.hset("room:membership:room-ws", "user-1", "red:spymaster")
     await handle_event(context, {"event": "join_room", "data": {}})
     await handle_event(context, {"event": "start_game", "data": {"word_pack": "cities", "seed": "ws-seed"}})
     await handle_event(context, {"event": "give_clue", "data": {"word": "travel", "number": 1}})
-    await redis_client.hset("room:membership:room-ws", "user-1", "red:operative")
-    state_raw = await redis_client.get("game:state:room-ws")
-    assert state_raw is not None
+    state = await GameManager().load_state(room_code)
+    assert state["current_clue"]["word"] == "travel"
     assert any(event[1] == "game_started" for event in manager.events)

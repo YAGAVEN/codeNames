@@ -9,26 +9,6 @@ BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 API_ORIGIN="${API_ORIGIN:-http://localhost:${BACKEND_PORT}}"
 WS_ORIGIN="${WS_ORIGIN:-ws://localhost:${BACKEND_PORT}}"
-KEEP_BACKEND_RUNNING="${KEEP_BACKEND_RUNNING:-0}"
-export BACKEND_PORT FRONTEND_PORT API_ORIGIN WS_ORIGIN
-
-if docker compose version >/dev/null 2>&1; then
-  COMPOSE_CMD=(docker compose)
-elif command -v docker-compose >/dev/null 2>&1; then
-  COMPOSE_CMD=(docker-compose)
-else
-  echo "Docker Compose is required to start the backend services." >&2
-  exit 1
-fi
-
-if ! command -v npm >/dev/null 2>&1; then
-  echo "npm is required to start the frontend." >&2
-  exit 1
-fi
-
-compose() {
-  (cd "$BACKEND_DIR" && "${COMPOSE_CMD[@]}" "$@")
-}
 
 ensure_env_files() {
   if [ ! -f "$BACKEND_DIR/.env" ]; then
@@ -42,32 +22,32 @@ ensure_env_files() {
   fi
 }
 
-cleanup() {
-  if [ "$KEEP_BACKEND_RUNNING" != "1" ]; then
-    echo
-    echo "Stopping backend app containers. Database and Redis containers are left running."
-    compose stop api worker beat >/dev/null 2>&1 || true
-  fi
-}
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required to start the backend." >&2
+  exit 1
+fi
 
-trap cleanup EXIT INT TERM
+if ! command -v npm >/dev/null 2>&1; then
+  echo "npm is required to start the frontend." >&2
+  exit 1
+fi
 
 ensure_env_files
 
-echo "Building backend containers..."
-compose build api worker beat
+echo "Starting backend on ${API_ORIGIN}"
+(
+  cd "$BACKEND_DIR"
+  PORT="$BACKEND_PORT" python3 -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT"
+) &
+BACKEND_PID=$!
 
-echo "Starting backend dependencies..."
-compose up -d db redis
+cleanup() {
+  echo
+  echo "Stopping backend."
+  kill "$BACKEND_PID" >/dev/null 2>&1 || true
+}
 
-echo "Applying database migrations..."
-compose run --rm api alembic upgrade head
-
-echo "Starting backend API and workers..."
-BACKEND_PORT="$BACKEND_PORT" compose up -d api worker beat
-
-echo "Backend:  ${API_ORIGIN}"
-echo "API docs: ${API_ORIGIN}/docs"
+trap cleanup EXIT INT TERM
 
 if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
   echo "Installing frontend dependencies..."
@@ -75,8 +55,6 @@ if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
 fi
 
 echo "Starting frontend on http://localhost:${FRONTEND_PORT}"
-echo "Press Ctrl+C to stop the frontend and backend app containers."
-
 (
   cd "$FRONTEND_DIR"
   VITE_API_URL="${VITE_API_URL:-${API_ORIGIN}/api}" \

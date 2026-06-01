@@ -49,15 +49,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("DATABASE_URL", "RENDER_DATABASE_URL", "RENDER_DB_URL", "POSTGRES_URL"),
     )
     TEST_DATABASE_URL: str = "sqlite+aiosqlite:///:memory:"
-    REDIS_URL: str = "redis://localhost:6379/0"
-    REDIS_CONNECT_TIMEOUT_SECONDS: float = 2.0
-    REDIS_SOCKET_TIMEOUT_SECONDS: float = 2.0
-    REDIS_HEALTH_CHECK_INTERVAL_SECONDS: int = 30
-    REDIS_RECONNECT_INTERVAL_SECONDS: int = 5
-    REDIS_STARTUP_RETRIES: int = 3
-    REDIS_STARTUP_RETRY_DELAY_SECONDS: float = 1.0
-    CELERY_BROKER_URL: str = "redis://localhost:6379/1"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT_SECONDS: int = 30
+    DB_POOL_RECYCLE_SECONDS: int = 1800
     SUPABASE_URL: AnyHttpUrl | None = None
     SUPABASE_ANON_KEY: str | None = None
     SUPABASE_SERVICE_KEY: str | None = None
@@ -68,6 +63,7 @@ class Settings(BaseSettings):
     WORD_PACKS_BUCKET: str = "word_packs"
     COOKIE_SECURE: bool = True
     COOKIE_DOMAIN: str | None = None
+    RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_REQUESTS: int = 120
     RATE_LIMIT_WINDOW_SECONDS: int = 60
     WS_HEARTBEAT_SECONDS: int = 30

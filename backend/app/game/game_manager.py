@@ -1,29 +1,20 @@
 # backend/app/game/game_manager.py
-import json
-import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
-
-from app.core.redis import disconnect_redis_pool
 from app.game.board_generator import generate_board
 from app.utils.constants import MoveType, PlayerRole, RoomStatus, Team
 from app.utils.exceptions import GameRuleError
 
-logger = logging.getLogger(__name__)
+_game_states: dict[str, dict[str, Any]] = {}
 
 
 class GameManager:
-    """Server-authoritative game state machine backed by Redis snapshots."""
-
-    def __init__(self, redis: Redis) -> None:
-        self.redis = redis
+    """Server-authoritative game state machine backed by process memory."""
 
     async def start_game(self, room_id: UUID | str, words: list[str], seed: str | int, word_pack: str) -> dict[str, Any]:
-        """Create an in-progress state and persist it to Redis."""
+        """Create an in-progress state and persist it in memory."""
         board = generate_board(words, seed)
         state = {
             "room_id": str(room_id),
@@ -43,26 +34,15 @@ class GameManager:
         return state
 
     async def load_state(self, room_id: UUID | str) -> dict[str, Any]:
-        """Load the latest game state snapshot from Redis."""
-        try:
-            raw = await self.redis.get(f"game:state:{room_id}")
-        except RedisError as exc:
-            logger.warning("game_state_load_redis_failed", extra={"room_id": str(room_id)}, exc_info=True)
-            await disconnect_redis_pool(self.redis)
-            raise GameRuleError("Game state storage is temporarily unavailable") from exc
-        if raw is None:
+        """Load the latest game state snapshot from memory."""
+        state = _game_states.get(str(room_id))
+        if state is None:
             raise GameRuleError("Game state was not found")
-        text = raw.decode() if isinstance(raw, bytes) else raw
-        return dict(json.loads(text))
+        return dict(state)
 
     async def save_state(self, room_id: UUID | str, state: dict[str, Any]) -> None:
         """Persist a full game-state snapshot after every move."""
-        try:
-            await self.redis.set(f"game:state:{room_id}", json.dumps(state))
-        except RedisError as exc:
-            logger.warning("game_state_save_redis_failed", extra={"room_id": str(room_id)}, exc_info=True)
-            await disconnect_redis_pool(self.redis)
-            raise GameRuleError("Game state storage is temporarily unavailable") from exc
+        _game_states[str(room_id)] = dict(state)
 
     async def give_clue(
         self,

@@ -1,7 +1,7 @@
 # backend/app/api/routes/rooms.py
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth_deps import get_current_user
@@ -19,26 +19,24 @@ router = APIRouter()
 @router.post("/create", response_model=EnvelopeSchema[RoomRead], summary="Create room")
 async def create_room(
     payload: RoomCreateRequest,
-    request: Request,
     _rate_limit: None = Depends(user_route_rate_limit),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Create a new waiting room."""
-    room = await RoomService(db, request.app.state.redis).create_room(user.id, payload)
+    room = await RoomService(db).create_room(user.id, payload)
     return success_response(room)
 
 
 @router.post("/join", response_model=EnvelopeSchema[RoomRead], summary="Join room")
 async def join_room(
     payload: RoomJoinRequest,
-    request: Request,
     _rate_limit: None = Depends(user_route_rate_limit),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Join a room by code."""
-    room = await RoomService(db, request.app.state.redis).join_room(user.id, payload)
+    room = await RoomService(db).join_room(user.id, payload)
     return success_response(room)
 
 

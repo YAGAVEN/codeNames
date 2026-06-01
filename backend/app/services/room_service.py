@@ -1,14 +1,10 @@
 # backend/app/services/room_service.py
-import logging
 import secrets
 import string
 from uuid import UUID
 
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.redis import disconnect_redis_pool
 from app.core.security import verify_password
 from app.repositories.room_player_repository import RoomPlayerRepository
 from app.repositories.room_repository import RoomRepository
@@ -16,23 +12,19 @@ from app.schemas.rooms import PublicRoomRead, RoomCreateRequest, RoomJoinRequest
 from app.utils.constants import PlayerRole, RoomStatus, Team
 from app.utils.exceptions import AuthorizationError, ConflictError, NotFoundError
 
-logger = logging.getLogger(__name__)
-
 
 class RoomService:
     """Room lifecycle and membership business logic."""
 
-    def __init__(self, session: AsyncSession, redis: Redis | None = None) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self.rooms = RoomRepository(session)
         self.players = RoomPlayerRepository(session)
-        self.redis = redis
 
     async def create_room(self, host_id: UUID, payload: RoomCreateRequest) -> RoomRead:
         """Create a room and add the host as the first player."""
         room_code = await self._unique_room_code()
         room = await self.rooms.create(room_code, host_id, payload.max_players, payload.settings)
-        membership = await self.players.add_player(room.id, host_id, Team.RED, PlayerRole.SPYMASTER)
-        await self._cache_membership(room.id, host_id, membership.team, membership.role)
+        await self.players.add_player(room.id, host_id, Team.RED, PlayerRole.SPYMASTER)
         await self.rooms.commit()
         await self.rooms.refresh(room)
         return await self.describe_room(room.id)
@@ -56,8 +48,7 @@ class RoomService:
         existing = await self.players.get_membership(room.id, user_id)
         if existing is None:
             team, role = await self._assign_team_role(room.id, payload.team)
-            membership = await self.players.add_player(room.id, user_id, team, role)
-            await self._cache_membership(room.id, user_id, membership.team, membership.role)
+            await self.players.add_player(room.id, user_id, team, role)
             await self.rooms.commit()
         return await self.describe_room(room.id)
 
@@ -159,16 +150,3 @@ class RoomService:
         rows = await self.players.list_by_room(room_id)
         has_spymaster = any(membership.team == team and membership.role == PlayerRole.SPYMASTER for membership, _ in rows)
         return team, PlayerRole.OPERATIVE if has_spymaster else PlayerRole.SPYMASTER
-
-    async def _cache_membership(self, room_id: UUID, user_id: UUID, team: Team, role: PlayerRole) -> None:
-        """Cache trusted team/role membership for WebSocket anti-cheat checks."""
-        if self.redis is not None:
-            try:
-                await self.redis.hset(f"room:membership:{room_id}", str(user_id), f"{team.value}:{role.value}")
-            except RedisError:
-                logger.warning(
-                    "room_membership_cache_failed",
-                    extra={"room_id": str(room_id), "user_id": str(user_id)},
-                    exc_info=True,
-                )
-                await disconnect_redis_pool(self.redis)

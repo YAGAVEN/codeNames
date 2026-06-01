@@ -1,17 +1,10 @@
 # backend/app/game/word_service.py
 import asyncio
 import json
-import logging
 from typing import Any
 
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
-
 from app.core.config import Settings, get_supabase_admin_client
-from app.core.redis import disconnect_redis_pool
 from app.utils.exceptions import NotFoundError
-
-logger = logging.getLogger(__name__)
 
 
 DEFAULT_WORDS = [
@@ -36,26 +29,20 @@ DEFAULT_WORD_PACKS: dict[str, list[str]] = {
     "festivals": DEFAULT_WORDS,
     "food": DEFAULT_WORDS,
 }
+_word_pack_cache: dict[str, list[str]] = {}
 
 
 class WordService:
     """Load, validate, and cache Supabase Storage word packs."""
 
-    def __init__(self, redis: Redis, settings: Settings) -> None:
-        self.redis = redis
+    def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
     async def load_word_pack(self, pack_name: str) -> list[str]:
-        """Load a word pack from Redis cache, Supabase Storage, or built-in fallback."""
-        key = f"wordpack:{pack_name}"
-        try:
-            cached = await self.redis.get(key)
-        except RedisError:
-            logger.warning("word_pack_cache_read_failed", extra={"pack_name": pack_name}, exc_info=True)
-            await disconnect_redis_pool(self.redis)
-            cached = None
+        """Load a word pack from memory cache, Supabase Storage, or built-in fallback."""
+        cached = _word_pack_cache.get(pack_name)
         if cached:
-            return list(json.loads(cached))
+            return list(cached)
 
         words = await self._load_from_supabase(pack_name)
         if words is None:
@@ -65,11 +52,7 @@ class WordService:
         if len(set(words)) < 100:
             raise ValueError("Word pack must contain at least 100 unique words")
 
-        try:
-            await self.redis.setex(key, 3600, json.dumps(words))
-        except RedisError:
-            logger.warning("word_pack_cache_write_failed", extra={"pack_name": pack_name}, exc_info=True)
-            await disconnect_redis_pool(self.redis)
+        _word_pack_cache[pack_name] = list(words)
         return list(words)
 
     async def signed_pack_url(self, pack_name: str, expires_in: int = 900) -> str | None:

@@ -1,24 +1,21 @@
 # backend/app/websocket/event_handlers.py
-import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.core.redis import disconnect_redis_pool
 from app.game.game_manager import GameManager
 from app.game.word_service import WordService
+from app.repositories.room_player_repository import RoomPlayerRepository
+from app.repositories.room_repository import RoomRepository
 from app.schemas.websocket import ClientEvent
 from app.utils.constants import ChatType, PlayerRole, Team
 from app.utils.exceptions import AppError, GameRuleError
 from app.utils.validators import sanitise_chat_message
 from app.websocket.connection_manager import ConnectionManager
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,7 +25,7 @@ class EventContext:
     room_id: str
     user_id: str
     manager: ConnectionManager
-    redis: Redis
+    db: AsyncSession
     settings: Settings
 
 
@@ -57,12 +54,14 @@ async def handle_event(context: EventContext, payload: dict[str, Any]) -> None:
 
 async def _membership(context: EventContext) -> tuple[Team, PlayerRole]:
     """Read server-stored team and role for the connected user."""
-    raw = await _redis_call(context, "membership_read", "hget", f"room:membership:{context.room_id}", context.user_id)
-    if raw is None:
+    room_id = await _room_uuid(context)
+    user_id = _user_uuid(context.user_id)
+    if room_id is None or user_id is None:
         return Team.SPECTATOR, PlayerRole.OPERATIVE
-    data = raw.decode() if isinstance(raw, bytes) else raw
-    team, role = data.split(":", 1)
-    return Team(team), PlayerRole(role)
+    membership = await RoomPlayerRepository(context.db).get_membership(room_id, user_id)
+    if membership is None:
+        return Team.SPECTATOR, PlayerRole.OPERATIVE
+    return membership.team, membership.role
 
 
 def _public_card(card: dict[str, Any]) -> dict[str, Any]:
@@ -121,15 +120,15 @@ def _public_state(state: dict[str, Any]) -> dict[str, Any]:
 
 async def _send_spymaster_board(context: EventContext, state: dict[str, Any]) -> None:
     """Send the hidden board only to sockets cached as spymasters."""
-    memberships = await _redis_call(context, "membership_list", "hgetall", f"room:membership:{context.room_id}")
-    for raw_user_id, raw_value in memberships.items():
-        user_id = raw_user_id.decode() if isinstance(raw_user_id, bytes) else str(raw_user_id)
-        value = raw_value.decode() if isinstance(raw_value, bytes) else str(raw_value)
-        _, role = value.split(":", 1)
-        if role == PlayerRole.SPYMASTER.value:
+    room_id = await _room_uuid(context)
+    if room_id is None:
+        return
+    memberships = await RoomPlayerRepository(context.db).list_by_room(room_id)
+    for membership, _ in memberships:
+        if membership.role == PlayerRole.SPYMASTER:
             await context.manager.send_to_user(
                 context.room_id,
-                user_id,
+                str(membership.user_id),
                 "spymaster_board_updated",
                 {"board": [_full_card(card) for card in state["board"]]},
             )
@@ -144,27 +143,10 @@ async def create_room(context: EventContext, data: dict[str, Any]) -> None:
 @websocket_handler("join_room")
 async def join_room(context: EventContext, data: dict[str, Any]) -> None:
     """Join room presence and store realtime membership metadata."""
-    raw = await _redis_call(context, "membership_read", "hget", f"room:membership:{context.room_id}", context.user_id)
-    if raw is None:
-        # A trusted REST join/team-assignment path should set this hash; unknown users become spectators.
-        team = Team.SPECTATOR
-        role = PlayerRole.OPERATIVE
-        await _redis_call(
-            context,
-            "membership_write",
-            "hset",
-            f"room:membership:{context.room_id}",
-            context.user_id,
-            f"{team.value}:{role.value}",
-        )
-    else:
-        stored = raw.decode() if isinstance(raw, bytes) else raw
-        team_value, role_value = stored.split(":", 1)
-        team = Team(team_value)
-        role = PlayerRole(role_value)
+    team, role = await _membership(context)
     await context.manager.broadcast(context.room_id, "player_joined", {"user_id": context.user_id, "team": team.value, "role": role.value})
     try:
-        state = await GameManager(context.redis).load_state(context.room_id)
+        state = await GameManager().load_state(context.room_id)
     except GameRuleError:
         return
     public_state = _public_state(state)
@@ -186,9 +168,14 @@ async def leave_room(context: EventContext, data: dict[str, Any]) -> None:
 
 @websocket_handler("ready_up")
 async def ready_up(context: EventContext, data: dict[str, Any]) -> None:
-    """Mark a player ready in Redis for fast lobby checks."""
+    """Mark a player ready in the database."""
     ready = bool(data.get("is_ready", True))
-    await _redis_call(context, "ready_write", "hset", f"room:ready:{context.room_id}", context.user_id, "1" if ready else "0")
+    room_id = await _room_uuid(context)
+    user_id = _user_uuid(context.user_id)
+    if room_id is not None and user_id is not None:
+        repo = RoomPlayerRepository(context.db)
+        await repo.set_ready(room_id, user_id, ready)
+        await repo.commit()
     await context.manager.broadcast(context.room_id, "player_joined", {"user_id": context.user_id, "is_ready": ready})
 
 
@@ -197,8 +184,8 @@ async def start_game(context: EventContext, data: dict[str, Any]) -> None:
     """Start a new server-authoritative game state."""
     pack_name = str(data.get("word_pack", "cities"))
     seed = str(data.get("seed") or uuid4())
-    words = await WordService(context.redis, context.settings).load_word_pack(pack_name)
-    state = await GameManager(context.redis).start_game(context.room_id, words, seed, pack_name)
+    words = await WordService(context.settings).load_word_pack(pack_name)
+    state = await GameManager().start_game(context.room_id, words, seed, pack_name)
     await context.manager.broadcast(context.room_id, "game_started", _public_state(state))
     await context.manager.broadcast(context.room_id, "board_updated", {"board": _public_state(state)["board"], "scores": _score_payload(state)})
     await _send_spymaster_board(context, state)
@@ -208,7 +195,7 @@ async def start_game(context: EventContext, data: dict[str, Any]) -> None:
 async def give_clue(context: EventContext, data: dict[str, Any]) -> None:
     """Apply a clue from the current team's spymaster."""
     team, role = await _membership(context)
-    state = await GameManager(context.redis).give_clue(
+    state = await GameManager().give_clue(
         context.room_id,
         context.user_id,
         team,
@@ -224,7 +211,7 @@ async def select_card(context: EventContext, data: dict[str, Any]) -> None:
     """Apply an operative guess and broadcast board/score updates."""
     team, role = await _membership(context)
     card_index = int(data["card_index"])
-    state = await GameManager(context.redis).select_card(context.room_id, context.user_id, team, role, card_index)
+    state = await GameManager().select_card(context.room_id, context.user_id, team, role, card_index)
     card = state["board"][card_index]
     await context.manager.broadcast(context.room_id, "card_revealed", {"card": _full_card(card)})
     await context.manager.broadcast(context.room_id, "score_updated", {"scores": _score_payload(state)})
@@ -239,7 +226,7 @@ async def select_card(context: EventContext, data: dict[str, Any]) -> None:
 async def end_turn(context: EventContext, data: dict[str, Any]) -> None:
     """Pass the current team's turn."""
     team, _ = await _membership(context)
-    state = await GameManager(context.redis).end_turn(context.room_id, context.user_id, team)
+    state = await GameManager().end_turn(context.room_id, context.user_id, team)
     await context.manager.broadcast(context.room_id, "turn_changed", {"current_team": state["current_team"]})
 
 
@@ -278,14 +265,15 @@ async def reconnect_player(context: EventContext, data: dict[str, Any]) -> None:
 @websocket_handler("spectate_game")
 async def spectate_game(context: EventContext, data: dict[str, Any]) -> None:
     """Move a user into spectator presence."""
-    await _redis_call(
-        context,
-        "membership_spectate_write",
-        "hset",
-        f"room:membership:{context.room_id}",
-        context.user_id,
-        f"{Team.SPECTATOR.value}:{PlayerRole.OPERATIVE.value}",
-    )
+    room_id = await _room_uuid(context)
+    user_id = _user_uuid(context.user_id)
+    if room_id is not None and user_id is not None:
+        repo = RoomPlayerRepository(context.db)
+        membership = await repo.get_membership(room_id, user_id)
+        if membership is not None:
+            membership.team = Team.SPECTATOR
+            membership.role = PlayerRole.OPERATIVE
+            await repo.commit()
     await context.manager.broadcast(context.room_id, "player_joined", {"user_id": context.user_id, "team": Team.SPECTATOR.value})
 
 
@@ -296,16 +284,18 @@ async def send_event_error(context: EventContext, exc: Exception) -> None:
     await context.manager.send_to_user(context.room_id, context.user_id, "error_message", {"code": code, "message": message})
 
 
-async def _redis_call(context: EventContext, operation: str, method_name: str, *args: Any) -> Any:
-    """Run a required WebSocket Redis operation with controlled failure semantics."""
-    method = getattr(context.redis, method_name)
+async def _room_uuid(context: EventContext) -> UUID | None:
+    """Resolve the WebSocket room path as either UUID or public room code."""
     try:
-        return await method(*args)
-    except RedisError as exc:
-        logger.warning(
-            "websocket_event_redis_operation_failed",
-            extra={"operation": operation, "room_id": context.room_id, "user_id": context.user_id},
-            exc_info=True,
-        )
-        await disconnect_redis_pool(context.redis)
-        raise GameRuleError("Realtime state is temporarily unavailable") from exc
+        return UUID(context.room_id)
+    except ValueError:
+        room = await RoomRepository(context.db).get_by_code(context.room_id.upper())
+        return room.id if room is not None else None
+
+
+def _user_uuid(user_id: str) -> UUID | None:
+    """Parse a user id from an access token payload."""
+    try:
+        return UUID(user_id)
+    except ValueError:
+        return None

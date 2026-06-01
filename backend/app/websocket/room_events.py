@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import WebSocket
 
 from app.core.security import decode_token
+from app.db.session import get_session
 from app.utils.exceptions import AuthenticationError
 from app.websocket.event_handlers import EventContext, handle_event, send_event_error
 
@@ -24,16 +25,17 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str) -> None:
 
     user_id = str(payload["sub"])
     manager = websocket.app.state.websocket_manager
-    redis = websocket.app.state.redis
     settings = manager.settings
-    context = EventContext(room_id=room_id, user_id=user_id, manager=manager, redis=redis, settings=settings)
-    await manager.connect(websocket, room_id, user_id)
-    try:
-        while True:
-            message = await websocket.receive_json()
-            try:
-                await handle_event(context, message)
-            except Exception as exc:
-                await send_event_error(context, exc)
-    except Exception:
-        await manager.disconnect(room_id, user_id)
+    async for db in get_session():
+        context = EventContext(room_id=room_id, user_id=user_id, manager=manager, db=db, settings=settings)
+        await manager.connect(websocket, room_id, user_id)
+        try:
+            while True:
+                message = await websocket.receive_json()
+                try:
+                    await handle_event(context, message)
+                except Exception as exc:
+                    await send_event_error(context, exc)
+        except Exception:
+            await manager.disconnect(room_id, user_id)
+        break

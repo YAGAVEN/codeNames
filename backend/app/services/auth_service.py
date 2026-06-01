@@ -1,10 +1,10 @@
 # backend/app/services/auth_service.py
 import asyncio
+import logging
 import re
 from dataclasses import dataclass
 from uuid import UUID
 
-from redis.asyncio import Redis
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,8 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, RegisterRequest
 from app.utils.constants import UserRole
 from app.utils.exceptions import AuthenticationError, ConflictError, NotFoundError
-from app.workers.tasks.email import send_password_reset_email, send_verification_email
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -46,9 +47,8 @@ class SupabaseProfile:
 class AuthService:
     """Supabase-backed auth orchestration with local JWT issuance."""
 
-    def __init__(self, session: AsyncSession, redis: Redis, settings: Settings, frontend_url: str | None = None) -> None:
+    def __init__(self, session: AsyncSession, settings: Settings, frontend_url: str | None = None) -> None:
         self.users = UserRepository(session)
-        self.redis = redis
         self.settings = settings
         self.frontend_url = (frontend_url or settings.FRONTEND_URL).rstrip("/")
 
@@ -61,7 +61,7 @@ class AuthService:
             await self.users.refresh(user)
         except IntegrityError as exc:
             raise ConflictError("Username or email is already registered") from exc
-        send_verification_email.delay(str(user.id))
+        logger.info("verification_email_requested", extra={"user_id": str(user.id)})
         return await self._issue_tokens(user.id, user.role)
 
     async def login(self, payload: LoginRequest) -> AuthTokens:
@@ -81,7 +81,7 @@ class AuthService:
 
     async def refresh(self, refresh_token: str) -> AuthTokens:
         """Rotate refresh token and issue a new short-lived access token."""
-        user_id, new_refresh = await rotate_refresh_token(self.redis, refresh_token)
+        user_id, new_refresh = await rotate_refresh_token(refresh_token)
         user = await self.users.get(user_id)
         if user is None:
             raise AuthenticationError("User no longer exists")
@@ -91,15 +91,15 @@ class AuthService:
     async def logout(self, refresh_token: str | None) -> None:
         """Revoke the current refresh token."""
         if refresh_token:
-            await revoke_refresh_token(self.redis, refresh_token)
+            await revoke_refresh_token(refresh_token)
 
     async def forgot_password(self, email: str) -> None:
-        """Issue a time-limited password-reset token and queue email delivery."""
+        """Issue a time-limited password-reset token and record the email request."""
         user = await self.users.get_by_email(email)
         if user is None:
             return
         token = create_password_reset_token(user.id)
-        send_password_reset_email.delay(str(user.id), token)
+        logger.info("password_reset_email_requested", extra={"user_id": str(user.id), "token_issued": bool(token)})
 
     async def reset_password(self, token: str, new_password: str) -> None:
         """Reset password through Supabase Auth after token verification."""
@@ -159,7 +159,7 @@ class AuthService:
     async def _issue_tokens(self, user_id: UUID, role: UserRole) -> AuthTokens:
         """Create access and refresh tokens."""
         access = create_access_token(user_id, role.value)
-        refresh = await create_refresh_token(self.redis, user_id)
+        refresh = await create_refresh_token(user_id)
         return AuthTokens(user_id=user_id, role=role, access_token=access, refresh_token=refresh)
 
     async def _supabase_sign_up(self, payload: RegisterRequest) -> UUID | None:

@@ -1,6 +1,7 @@
 # backend/app/services/friend_service.py
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +10,8 @@ from app.repositories.friendship_repository import FriendshipRepository
 from app.repositories.user_repository import UserRepository
 from app.utils.constants import FriendshipStatus
 from app.utils.exceptions import AuthorizationError, ConflictError, NotFoundError
-from app.workers.tasks.email import send_friend_request_email
+
+logger = logging.getLogger(__name__)
 
 
 class FriendService:
@@ -29,7 +31,10 @@ class FriendService:
         friendship = await self.friendships.create(requester_id, addressee_id)
         await self.friendships.commit()
         await self.friendships.refresh(friendship)
-        send_friend_request_email.delay(str(requester_id), str(addressee_id))
+        logger.info(
+            "friend_request_email_requested",
+            extra={"requester_id": str(requester_id), "addressee_id": str(addressee_id)},
+        )
         return friendship
 
     async def accept(self, user_id: UUID, friendship_id: UUID) -> object:

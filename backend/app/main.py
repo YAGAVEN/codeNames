@@ -40,7 +40,7 @@ def _find_grouped_app_error(exc: BaseException) -> AppError | None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Run async startup/shutdown hooks for Redis and pub/sub."""
+    """Run async startup/shutdown hooks."""
     await startup(app)
     try:
         yield
@@ -57,7 +57,8 @@ app = FastAPI(
 
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(OptionalAuthMiddleware)
-app.add_middleware(RateLimitMiddleware, settings=settings)
+if settings.RATE_LIMIT_ENABLED:
+    app.add_middleware(RateLimitMiddleware, settings=settings)
 
 app.include_router(auth.router, prefix=f"{settings.API_PREFIX}/auth", tags=["auth"])
 app.include_router(rooms.router, prefix=f"{settings.API_PREFIX}/rooms", tags=["rooms"])

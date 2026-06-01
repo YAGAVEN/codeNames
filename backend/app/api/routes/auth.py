@@ -68,7 +68,7 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Register user through Supabase Auth and issue app tokens."""
-    tokens = await AuthService(db, request.app.state.redis, settings, _trusted_frontend_url(request)).register(payload)
+    tokens = await AuthService(db, settings, _trusted_frontend_url(request)).register(payload)
     _set_refresh_cookie(response, tokens.refresh_token)
     return success_response(_token_payload(tokens))
 
@@ -77,11 +77,10 @@ async def register(
 async def login(
     payload: LoginRequest,
     response: Response,
-    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Login and set refresh-token cookie."""
-    tokens = await AuthService(db, request.app.state.redis, settings).login(payload)
+    tokens = await AuthService(db, settings).login(payload)
     _set_refresh_cookie(response, tokens.refresh_token)
     return success_response(_token_payload(tokens))
 
@@ -89,14 +88,13 @@ async def login(
 @router.post("/refresh", response_model=EnvelopeSchema[RefreshResponse], summary="Refresh access token")
 async def refresh(
     response: Response,
-    request: Request,
     refresh_token: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Rotate refresh token and return a fresh access token."""
     if refresh_token is None:
         raise AuthenticationError("Missing refresh token")
-    tokens = await AuthService(db, request.app.state.redis, settings).refresh(refresh_token)
+    tokens = await AuthService(db, settings).refresh(refresh_token)
     _set_refresh_cookie(response, tokens.refresh_token)
     return success_response(RefreshResponse(access_token=tokens.access_token, expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60))
 
@@ -104,40 +102,38 @@ async def refresh(
 @router.post("/logout", response_model=EnvelopeSchema[MessageResponse], summary="Logout")
 async def logout(
     response: Response,
-    request: Request,
     refresh_token: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Revoke refresh token and clear cookie."""
-    await AuthService(db, request.app.state.redis, settings).logout(refresh_token)
+    await AuthService(db, settings).logout(refresh_token)
     response.delete_cookie("refresh_token", path="/api/auth", domain=settings.COOKIE_DOMAIN)
     return success_response(MessageResponse(message="Logged out"))
 
 
 @router.post("/forgot-password", response_model=EnvelopeSchema[MessageResponse], summary="Forgot password")
 async def forgot_password(payload: ForgotPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
-    """Queue a password-reset email when the account exists."""
-    await AuthService(db, request.app.state.redis, settings, _trusted_frontend_url(request)).forgot_password(str(payload.email))
+    """Record a password-reset request when the account exists."""
+    await AuthService(db, settings, _trusted_frontend_url(request)).forgot_password(str(payload.email))
     return success_response(MessageResponse(message="If the account exists, a reset email will be sent"))
 
 
 @router.post("/reset-password", response_model=EnvelopeSchema[MessageResponse], summary="Reset password")
-async def reset_password(payload: ResetPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+async def reset_password(payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Reset password with a time-limited signed token."""
-    await AuthService(db, request.app.state.redis, settings).reset_password(payload.token, payload.new_password)
+    await AuthService(db, settings).reset_password(payload.token, payload.new_password)
     return success_response(MessageResponse(message="Password reset complete"))
 
 
 @router.get("/google", response_model=EnvelopeSchema[GoogleOAuthUrlResponse], summary="Start Google OAuth")
 async def google(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     """Return Supabase Google OAuth redirect URL."""
-    url = await AuthService(db, request.app.state.redis, settings, _trusted_frontend_url(request)).google_oauth_url()
+    url = await AuthService(db, settings, _trusted_frontend_url(request)).google_oauth_url()
     return success_response(GoogleOAuthUrlResponse(url=url))
 
 
 @router.get("/google/callback", summary="Google OAuth callback")
 async def google_callback(
-    request: Request,
     code: str = Query(default=""),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -146,7 +142,7 @@ async def google_callback(
         fragment = urlencode({"error": "missing_oauth_code"})
         return RedirectResponse(url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#{fragment}", status_code=303)
 
-    tokens = await AuthService(db, request.app.state.redis, settings).handle_google_callback(code)
+    tokens = await AuthService(db, settings).handle_google_callback(code)
     payload = _token_payload(tokens)
     fragment = urlencode(
         {

@@ -13,7 +13,14 @@ if database_url.startswith("postgresql") and "+asyncpg" not in database_url:
 
 engine_kwargs = {"pool_pre_ping": True, "future": True}
 if not database_url.startswith("sqlite"):
-    engine_kwargs.update({"pool_size": 20, "max_overflow": 40})
+    engine_kwargs.update(
+        {
+            "pool_size": settings.DB_POOL_SIZE,
+            "max_overflow": settings.DB_MAX_OVERFLOW,
+            "pool_timeout": settings.DB_POOL_TIMEOUT_SECONDS,
+            "pool_recycle": settings.DB_POOL_RECYCLE_SECONDS,
+        }
+    )
 
 engine = create_async_engine(database_url, **engine_kwargs)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)

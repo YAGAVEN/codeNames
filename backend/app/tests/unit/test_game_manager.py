@@ -8,9 +8,9 @@ from app.utils.exceptions import GameRuleError
 
 
 @pytest.mark.asyncio
-async def test_game_manager_validates_clues_and_guesses(redis_client) -> None:
-    """A legal clue followed by a legal guess should update Redis state."""
-    manager = GameManager(redis_client)
+async def test_game_manager_validates_clues_and_guesses() -> None:
+    """A legal clue followed by a legal guess should update in-memory state."""
+    manager = GameManager()
     state = await manager.start_game("room-1", DEFAULT_WORD_PACKS["cities"], "seed-2", "cities")
     board_word = state["board"][0]["word"]
 
