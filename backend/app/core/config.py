@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def normalize_database_url(cls, value: str | None) -> str:
-        """Normalize database URLs to asyncpg and enforce Supabase SSL."""
+        """Normalize database URLs to asyncpg and strip unsupported SSL params."""
         if not value:
             raise ValueError("DATABASE_URL is required")
         raw = str(value).strip()
@@ -105,15 +105,18 @@ class Settings(BaseSettings):
         if not parsed.hostname:
             raise ValueError("DATABASE_URL must include a hostname")
         qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
-        ssl_enforced = False
-        if parsed.hostname.endswith("supabase.co") and "ssl" not in qs and "sslmode" not in qs:
-            qs["ssl"] = "require"
-            ssl_enforced = True
+        sslmode_removed = qs.pop("sslmode", None) is not None
+        ssl_removed = qs.pop("ssl", None) is not None
+        if sslmode_removed or ssl_removed:
             normalized = urlunparse(parsed._replace(query=urlencode(qs)))
         if normalized != raw:
             logger.info(
                 "database_url_normalized",
-                extra={"database_url": _redact_database_url(normalized), "ssl_enforced": ssl_enforced},
+                extra={
+                    "database_url": _redact_database_url(normalized),
+                    "sslmode_removed": sslmode_removed,
+                    "ssl_removed": ssl_removed,
+                },
             )
         return normalized
 

@@ -5,15 +5,17 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import get_settings
 from app.db.base import Base
+from app.db.engine import build_engine_config
 from app.db import models  # noqa: F401 - imports model metadata for autogenerate
 
 config = context.config
 settings = get_settings()
-database_url = settings.DATABASE_URL
+engine_config = build_engine_config(settings.DATABASE_URL)
+database_url = engine_config.database_url
 config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
@@ -43,11 +45,10 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_migrations_online() -> None:
     """Run migrations through SQLAlchemy's async engine."""
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    engine_kwargs: dict[str, object] = {"poolclass": pool.NullPool}
+    if engine_config.connect_args:
+        engine_kwargs["connect_args"] = engine_config.connect_args
+    connectable = create_async_engine(database_url, **engine_kwargs)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

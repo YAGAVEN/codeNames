@@ -4,14 +4,18 @@ from collections.abc import AsyncIterator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
+from app.db.engine import build_engine_config
 
 settings = get_settings()
-database_url = settings.DATABASE_URL
+engine_config = build_engine_config(settings.DATABASE_URL)
+database_url = engine_config.database_url
 
 if database_url.startswith("postgresql") and "+asyncpg" not in database_url:
     raise RuntimeError("DATABASE_URL must use asyncpg (postgresql+asyncpg://)")
 
 engine_kwargs = {"pool_pre_ping": True, "future": True}
+if engine_config.connect_args:
+    engine_kwargs["connect_args"] = engine_config.connect_args
 if not database_url.startswith("sqlite"):
     engine_kwargs.update(
         {
