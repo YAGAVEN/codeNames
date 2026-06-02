@@ -25,6 +25,10 @@ def _ssl_required_from_query(query: Mapping[str, str | None]) -> bool:
     return False
 
 
+def _is_supabase_host(host: str) -> bool:
+    return host.endswith(".supabase.co") or host.endswith(".pooler.supabase.com")
+
+
 def build_engine_config(database_url: str) -> EngineConfig:
     """Return a sanitized URL and asyncpg SSL config for the engine."""
     if database_url.startswith("sqlite"):
@@ -37,7 +41,7 @@ def build_engine_config(database_url: str) -> EngineConfig:
     query.pop("ssl", None)
 
     host = url.host or ""
-    if host.endswith("supabase.co"):
+    if _is_supabase_host(host):
         ssl_required = True
 
     connect_args: dict[str, object] = {}

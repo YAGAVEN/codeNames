@@ -15,7 +15,7 @@ Async FastAPI backend for Codenames India with PostgreSQL/Supabase, Alembic migr
 
 ## Supabase Database Setup
 
-If you want the tables inside your Supabase project, set `DATABASE_URL` to your Supabase Postgres connection string (use the `postgres` role and include `?ssl=require` for asyncpg), then run:
+If you want the tables inside your Supabase project, set `DATABASE_URL` to your Supabase Postgres connection string and include `?sslmode=require`, then run:
 
 ```bash
 alembic upgrade head
@@ -23,6 +23,7 @@ alembic upgrade head
 
 The migration creates the public tables, RLS policies, and the `auth.users` trigger that keeps `public.users` in sync.
 The backend expects the asyncpg driver; plain `postgresql://` URLs are automatically upgraded to `postgresql+asyncpg://` at runtime.
+On IPv4-only hosts such as Render, use Supabase's session pooler connection string instead of the direct `db.<project>.supabase.co` host.
 
 ## Production (Render)
 
