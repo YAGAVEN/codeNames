@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getStoredToken } from './api.js';
 import { createRoomCode } from '../utils/helpers.js';
 
+const PRODUCTION_WS_URL = 'wss://codenames-india-api.onrender.com/ws';
+
 export const SOCKET_EVENTS = {
   JOIN_ROOM: 'join-room',
   LEAVE_ROOM: 'leave-room',
@@ -24,11 +26,7 @@ export const SOCKET_EVENTS = {
 
 const buildWsFallback = () => {
   if (import.meta.env.PROD) {
-    if (typeof window !== 'undefined') {
-      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      return `${protocol}://${window.location.host}/ws`;
-    }
-    return '/ws';
+    return PRODUCTION_WS_URL;
   }
   return 'ws://localhost:8000/ws';
 };

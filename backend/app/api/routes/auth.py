@@ -41,7 +41,7 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         httponly=True,
         secure=settings.COOKIE_SECURE,
-        samesite="lax",
+        samesite=settings.COOKIE_SAMESITE,
         domain=settings.COOKIE_DOMAIN,
         path="/api/auth",
     )
@@ -107,7 +107,14 @@ async def logout(
 ) -> dict:
     """Revoke refresh token and clear cookie."""
     await AuthService(db, settings).logout(refresh_token)
-    response.delete_cookie("refresh_token", path="/api/auth", domain=settings.COOKIE_DOMAIN)
+    response.delete_cookie(
+        "refresh_token",
+        path="/api/auth",
+        domain=settings.COOKIE_DOMAIN,
+        secure=settings.COOKIE_SECURE,
+        httponly=True,
+        samesite=settings.COOKIE_SAMESITE,
+    )
     return success_response(MessageResponse(message="Logged out"))
 
 

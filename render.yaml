@@ -24,3 +24,9 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false
+      - key: COOKIE_SECURE
+        value: true
+      - key: COOKIE_SAMESITE
+        value: none
+      - key: COOKIE_DOMAIN
+        sync: false

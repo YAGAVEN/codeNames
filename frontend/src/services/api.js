@@ -1,9 +1,8 @@
+const PRODUCTION_API_URL = 'https://codenames-india-api.onrender.com/api';
+
 const buildApiFallback = () => {
   if (import.meta.env.PROD) {
-    if (typeof window !== 'undefined') {
-      return `${window.location.origin}/api`;
-    }
-    return '/api';
+    return PRODUCTION_API_URL;
   }
   return 'http://localhost:8000/api';
 };

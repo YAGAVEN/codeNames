@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     WORD_PACKS_BUCKET: str = "word_packs"
     COOKIE_SECURE: bool = True
     COOKIE_DOMAIN: str | None = None
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "none"
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_REQUESTS: int = 120
     RATE_LIMIT_WINDOW_SECONDS: int = 60
@@ -78,6 +79,14 @@ class Settings(BaseSettings):
         """Accept comma-separated origins from env files."""
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("COOKIE_DOMAIN", mode="before")
+    @classmethod
+    def empty_cookie_domain_to_none(cls, value: str | None) -> str | None:
+        """Treat blank cookie domains as host-only cookies."""
+        if isinstance(value, str) and not value.strip():
+            return None
         return value
 
     @field_validator("DATABASE_URL", mode="before")

@@ -10,6 +10,7 @@ from app.db.models.user import User
 from app.game.game_manager import GameManager
 from app.utils.constants import PlayerRole, Team
 from app.websocket.event_handlers import EventContext, handle_event
+from app.websocket.room_events import websocket_endpoint
 
 
 class RecordingManager:
@@ -29,6 +30,32 @@ class RecordingManager:
     async def disconnect(self, room_id: str, user_id: str) -> None:
         """Record disconnect calls."""
         self.events.append((room_id, "disconnect", {"user_id": user_id}))
+
+
+class MissingTokenWebSocket:
+    """Minimal WebSocket double for auth-close behavior."""
+
+    query_params = {}
+
+    def __init__(self) -> None:
+        self.accepted = False
+        self.close_code = None
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def close(self, code: int) -> None:
+        self.close_code = code
+
+
+@pytest.mark.asyncio
+async def test_websocket_missing_token_closes_cleanly() -> None:
+    websocket = MissingTokenWebSocket()
+
+    await websocket_endpoint(websocket, "lobby")  # type: ignore[arg-type]
+
+    assert websocket.accepted is True
+    assert websocket.close_code == 4001
 
 
 @pytest.mark.asyncio

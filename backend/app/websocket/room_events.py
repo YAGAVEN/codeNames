@@ -1,6 +1,3 @@
-# backend/app/websocket/room_events.py
-from typing import Any
-
 from fastapi import WebSocket
 
 from app.core.security import decode_token
@@ -13,13 +10,11 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str) -> None:
     """Authenticate a room socket and process typed client events."""
     token = websocket.query_params.get("token")
     try:
-        if token is None:
-            first_message: dict[str, Any] = await websocket.receive_json()
-            if first_message.get("event") != "auth":
-                raise AuthenticationError("First WebSocket message must authenticate")
-            token = str(first_message.get("data", {}).get("token", ""))
+        if not token:
+            raise AuthenticationError("WebSocket token is required")
         payload = decode_token(token)
     except AuthenticationError:
+        await websocket.accept()
         await websocket.close(code=4001)
         return
 

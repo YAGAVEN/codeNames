@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from uuid import UUID
 
+from gotrue.errors import AuthError, AuthRetryableError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +21,7 @@ from app.core.security import (
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, RegisterRequest
 from app.utils.constants import UserRole
-from app.utils.exceptions import AuthenticationError, ConflictError, NotFoundError
+from app.utils.exceptions import AuthenticationError, ConflictError, NotFoundError, ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -190,10 +191,21 @@ class AuthService:
             if self.settings.is_production:
                 raise AuthenticationError("Supabase Auth is not configured")
             return None
-        result = await asyncio.to_thread(
-            client.auth.sign_in_with_password,
-            {"email": str(payload.email), "password": payload.password},
-        )
+        try:
+            result = await asyncio.to_thread(
+                client.auth.sign_in_with_password,
+                {"email": str(payload.email), "password": payload.password},
+            )
+        except AuthRetryableError as exc:
+            raise ServiceUnavailableError("Supabase Auth is temporarily unavailable") from exc
+        except AuthError as exc:
+            logger.info(
+                "supabase_login_failed",
+                extra={
+                    "auth_error": getattr(exc, "name", type(exc).__name__),
+                },
+            )
+            raise AuthenticationError("Invalid email or password") from exc
         return self._extract_supabase_profile(result)
 
     def _extract_supabase_profile(self, result: object) -> SupabaseProfile | None:

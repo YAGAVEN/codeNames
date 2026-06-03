@@ -11,20 +11,11 @@ from app.core.config import get_settings
 from app.db.base import Base
 from app.db.engine import build_engine_config
 from app.db import models
-from sqlalchemy.engine import make_url
 
 config = context.config
 settings = get_settings()
 engine_config = build_engine_config(settings.DATABASE_URL)
 database_url = engine_config.database_url
-
-
-u = make_url(database_url)
-print("USER =", u.username)
-print("HOST =", u.host)
-print("PORT =", u.port)
-print("PASS_LEN =", len(u.password) if u.password else 0)
-print("PASS_FIRST3 =", u.password if u.password else "NONE")
 
 config.set_main_option("sqlalchemy.url", database_url)
 
