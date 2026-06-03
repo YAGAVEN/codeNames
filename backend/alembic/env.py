@@ -24,7 +24,7 @@ print("USER =", u.username)
 print("HOST =", u.host)
 print("PORT =", u.port)
 print("PASS_LEN =", len(u.password) if u.password else 0)
-print("PASS_FIRST3 =", u.passwords if u.password else "NONE")
+print("PASS_FIRST3 =", u.password if u.password else "NONE")
 
 config.set_main_option("sqlalchemy.url", database_url)
 
