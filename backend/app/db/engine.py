@@ -60,6 +60,6 @@ def build_engine_config(database_url: str) -> EngineConfig:
     sanitized_url = url.set(query=query)
 
     return EngineConfig(
-        database_url=str(sanitized_url),
+        database_url=sanitized_url.render_as_string(hide_password=False),
         connect_args=connect_args,
     )

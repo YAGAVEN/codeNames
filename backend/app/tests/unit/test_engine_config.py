@@ -1,4 +1,5 @@
 from app.db.engine import build_engine_config
+from sqlalchemy.engine import make_url
 
 
 def test_supabase_pooler_sslmode_is_converted_to_asyncpg_ssl() -> None:
@@ -8,6 +9,7 @@ def test_supabase_pooler_sslmode_is_converted_to_asyncpg_ssl() -> None:
     )
 
     assert "sslmode" not in config.database_url
+    assert make_url(config.database_url).password == "password"
     assert "ssl" in config.connect_args
 
 
