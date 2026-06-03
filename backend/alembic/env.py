@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.config import get_settings
 from app.db.base import Base
 from app.db.engine import build_engine_config
-from app.db import models  # noqa: F401 - imports model metadata for autogenerate
+from app.db import models
+from sqlalchemy.engine import make_url
+
+u = make_url(database_url)
+print("USER =", u.username)
+print("HOST =", u.host)  # noqa: F401 - imports model metadata for autogenerate
 
 config = context.config
 settings = get_settings()
