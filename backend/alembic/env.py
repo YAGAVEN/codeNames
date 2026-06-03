@@ -18,7 +18,6 @@ settings = get_settings()
 engine_config = build_engine_config(settings.DATABASE_URL)
 database_url = engine_config.database_url
 
-from sqlalchemy.engine import make_url
 
 u = make_url(database_url)
 print("USER =", u.username)
