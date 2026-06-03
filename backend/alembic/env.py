@@ -22,6 +22,9 @@ database_url = engine_config.database_url
 u = make_url(database_url)
 print("USER =", u.username)
 print("HOST =", u.host)
+print("PORT =", u.port)
+print("PASS_LEN =", len(u.password) if u.password else 0)
+print("PASS_FIRST3 =", u.password[:3] if u.password else "NONE")
 
 config.set_main_option("sqlalchemy.url", database_url)
 
