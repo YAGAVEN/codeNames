@@ -13,14 +13,17 @@ from app.db.engine import build_engine_config
 from app.db import models
 from sqlalchemy.engine import make_url
 
-u = make_url(database_url)
-print("USER =", u.username)
-print("HOST =", u.host)  # noqa: F401 - imports model metadata for autogenerate
-
 config = context.config
 settings = get_settings()
 engine_config = build_engine_config(settings.DATABASE_URL)
 database_url = engine_config.database_url
+
+from sqlalchemy.engine import make_url
+
+u = make_url(database_url)
+print("USER =", u.username)
+print("HOST =", u.host)
+
 config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
