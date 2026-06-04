@@ -37,12 +37,19 @@ def _is_supabase_pooler_host(host: str) -> bool:
     return host.endswith(".pooler.supabase.com")
 
 
+def _is_supabase_transaction_pooler(host: str, port: int | None) -> bool:
+    return port == 6543 and (
+        _is_supabase_pooler_host(host)
+        or host.endswith(".supabase.co")
+    )
+
+
 def build_engine_config(database_url: str) -> EngineConfig:
     """
     Return a sanitized URL and asyncpg connection arguments.
     Handles:
     - SSL for Supabase
-    - PgBouncer compatibility
+    - Supabase transaction-pooler compatibility
     """
 
     if database_url.startswith("sqlite"):
@@ -66,10 +73,13 @@ def build_engine_config(database_url: str) -> EngineConfig:
     if _is_supabase_host(host):
         ssl_required = True
 
-    if _is_supabase_pooler_host(host):
-        # Supabase PgBouncer (transaction pooling) is incompatible with prepared statements.
-        # statement_cache_size=0 disables prepared statement caching in asyncpg.
+    if _is_supabase_transaction_pooler(host, url.port):
+        # Supabase's transaction pooler is incompatible with cached prepared
+        # statements. These are two separate caches:
+        # - asyncpg's driver-level automatic statement cache
+        # - SQLAlchemy's asyncpg prepared-statement cache
         connect_args["statement_cache_size"] = 0
+        query["prepared_statement_cache_size"] = "0"
 
     if ssl_required:
         ssl_context = ssl.create_default_context()
