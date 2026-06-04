@@ -1,6 +1,6 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/pages/GamePage.jsx
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Eye, MessageCircle, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '../components/ui/Button.jsx';
 import { Badge } from '../components/ui/Badge.jsx';
@@ -11,7 +11,6 @@ import { ReactionRail } from '../components/game/ReactionRail.jsx';
 import { Scoreboard } from '../components/game/Scoreboard.jsx';
 import { TeamPanel } from '../components/game/TeamPanel.jsx';
 import { Timer } from '../components/game/Timer.jsx';
-import { VoiceChat } from '../components/game/VoiceChat.jsx';
 import { WordGrid } from '../components/game/WordGrid.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { useAuth } from '../hooks/useAuth.js';
@@ -21,25 +20,34 @@ import { SOCKET_EVENTS } from '../services/socket.js';
 
 const GamePage = () => {
   const { roomCode } = useParams();
+  const navigate = useNavigate();
   const { soundEnabled, setSoundEnabled } = useAuth();
   const { board, score, currentTurn, clue, players, timerSeconds, roomSettings, setTimer, winner } = useGame();
   const { emit, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [chatOpen, setChatOpen] = useState(false);
 
+  // Register room code so the socket connects to the correct room.
+  // This covers players who navigate directly to /game/:roomCode (e.g. late joins,
+  // page refresh) — the socket will send join_room on open.
   useEffect(() => {
     setRoomCode(roomCode || '');
   }, [roomCode, setRoomCode]);
 
   useEffect(() => {
     if (winner) {
-      showToast({ type: 'success', title: `${winner === 'red' ? 'Red' : 'Blue'} team wins`, message: 'Result screen is ready with match stats.' });
+      showToast({
+        type: 'success',
+        title: `${winner === 'red' ? '🔴 Red' : '🔵 Blue'} team wins!`,
+        message: 'View the result screen for match stats.'
+      });
     }
   }, [showToast, winner]);
 
-  const handleReveal = async (cardId) => {
+  const handleReveal = (cardId) => {
     try {
-      await emit(SOCKET_EVENTS.MAKE_GUESS, { roomCode, cardId });
+      // card_index is the numeric index extracted from boardId by socket.js
+      emit(SOCKET_EVENTS.MAKE_GUESS, { cardId });
     } catch (error) {
       showToast({ type: 'error', title: 'Guess failed', message: error.message });
     }
@@ -89,7 +97,6 @@ const GamePage = () => {
 
         <aside className="hidden space-y-4 xl:block">
           <ClueInput compact />
-          <VoiceChat players={players} />
           <ChatPanel compact />
         </aside>
       </div>

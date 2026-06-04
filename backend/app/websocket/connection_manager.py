@@ -43,14 +43,17 @@ class ConnectionManager:
         self._heartbeat_task = None
 
     async def connect(self, websocket: WebSocket, room_id: str, user_id: str) -> None:
-        """Accept and register a socket in local memory."""
+        """Accept and register a socket in local memory.
+
+        NOTE: Does NOT broadcast player_joined here. The join_room WS event
+        handler performs the broadcast with full user info (username, team, role).
+        """
         await websocket.accept()
         self.connections[room_id][user_id] = websocket
         grace_key = (room_id, user_id)
         grace_task = self._grace_tasks.pop(grace_key, None)
         if grace_task is not None:
             grace_task.cancel()
-        await self.broadcast(room_id, "player_joined", {"user_id": user_id})
 
     async def disconnect(self, room_id: str, user_id: str) -> None:
         """Unregister a socket and begin reconnection grace handling."""

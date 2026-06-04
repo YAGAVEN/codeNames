@@ -44,13 +44,23 @@ class WordService:
         if cached:
             return list(cached)
 
+        words: list[str] | None = None
+
+        # Try Supabase first (fails silently — returns None on any error)
         words = await self._load_from_supabase(pack_name)
-        if words is None:
-            words = DEFAULT_WORD_PACKS.get(pack_name)
+
+        # Fall back to built-in word packs
         if not words:
-            raise NotFoundError(f"Word pack '{pack_name}' was not found")
-        if len(set(words)) < 100:
-            raise ValueError("Word pack must contain at least 100 unique words")
+            words = DEFAULT_WORD_PACKS.get(pack_name) or DEFAULT_WORD_PACKS.get("default")
+
+        if not words:
+            raise NotFoundError(f"Word pack '{pack_name}' was not found and no default is available")
+
+        # Require at least 25 unique words (one full board). A stricter 100-word
+        # threshold is enforced only for Supabase-sourced packs.
+        unique_count = len(set(w.strip().casefold() for w in words if w.strip()))
+        if unique_count < 25:
+            raise ValueError(f"Word pack '{pack_name}' has too few unique words ({unique_count}); need at least 25")
 
         _word_pack_cache[pack_name] = list(words)
         return list(words)

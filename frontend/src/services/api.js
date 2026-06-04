@@ -133,10 +133,13 @@ const normalizeRoom = (room = {}) => {
   const status = room.status === 'in_progress' ? 'In Game' : room.status === 'waiting' ? 'Waiting' : room.status || 'Waiting';
   const host = room.host ? normalizeUser(room.host) : null;
   const players = (room.players || []).map(normalizeRoomPlayer);
+  // Preserve host_id from backend (UUID string) for admin permission checks
+  const hostId = room.host_id || room.hostId || (host ? host.id : null);
 
   return {
     id: String(room.id || code || ''),
     code,
+    host_id: hostId ? String(hostId) : null,
     name: room.name || settings.name || settings.roomName || `${room.theme || settings.theme || 'Classic'} Room`,
     host,
     playerCount: Number(room.playerCount ?? room.player_count ?? room.players?.length ?? 0),

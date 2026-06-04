@@ -4,12 +4,25 @@ import { createRoomCode } from '../utils/helpers.js';
 
 const PRODUCTION_WS_URL = 'wss://codenames-india-api.onrender.com/ws';
 
+// ── Event name constants ────────────────────────────────────────────────────
+// Client-emitted (frontend → backend)
+// Server-emitted (backend → frontend)
 export const SOCKET_EVENTS = {
+  // Client → Server
   JOIN_ROOM: 'join-room',
   LEAVE_ROOM: 'leave-room',
+  CHANGE_TEAM: 'change-team',
   GIVE_CLUE: 'give-clue',
   MAKE_GUESS: 'make-guess',
+  START_GAME: 'start-game',
+  CHAT_MESSAGE: 'chat-message',
+  EMOJI_REACTION: 'emoji-reaction',
+  PLAYER_READY: 'player-ready',
+
+  // Server → Client
   PLAYER_JOINED: 'player-joined',
+  PLAYER_LEFT: 'player-left',
+  TEAM_CHANGED: 'team-changed',
   GAME_STARTED: 'game-started',
   CARD_REVEALED: 'card-revealed',
   BOARD_UPDATED: 'board-updated',
@@ -19,9 +32,7 @@ export const SOCKET_EVENTS = {
   CLUE_RECEIVED: 'clue-received',
   GAME_OVER: 'game-over',
   ERROR_MESSAGE: 'error-message',
-  CHAT_MESSAGE: 'chat-message',
-  EMOJI_REACTION: 'emoji-reaction',
-  PLAYER_READY: 'player-ready'
+  HEARTBEAT: 'heartbeat'
 };
 
 const buildWsFallback = () => {
@@ -32,19 +43,25 @@ const buildWsFallback = () => {
 };
 
 export const WS_BASE_URL = (import.meta.env.VITE_WS_URL || buildWsFallback()).replace(/\/+$/, '');
+
+// ── Client → Server event name mapping ─────────────────────────────────────
 const backendEvents = {
   [SOCKET_EVENTS.JOIN_ROOM]: 'join_room',
   [SOCKET_EVENTS.LEAVE_ROOM]: 'leave_room',
+  [SOCKET_EVENTS.CHANGE_TEAM]: 'change_team',
   [SOCKET_EVENTS.GIVE_CLUE]: 'give_clue',
   [SOCKET_EVENTS.MAKE_GUESS]: 'select_card',
-  [SOCKET_EVENTS.GAME_STARTED]: 'start_game',
+  [SOCKET_EVENTS.START_GAME]: 'start_game',
   [SOCKET_EVENTS.CHAT_MESSAGE]: 'send_chat',
   [SOCKET_EVENTS.EMOJI_REACTION]: 'reaction',
   [SOCKET_EVENTS.PLAYER_READY]: 'ready_up'
 };
 
+// ── Server → Client event name mapping ─────────────────────────────────────
 const frontendEvents = {
   player_joined: SOCKET_EVENTS.PLAYER_JOINED,
+  player_left: SOCKET_EVENTS.PLAYER_LEFT,
+  team_changed: SOCKET_EVENTS.TEAM_CHANGED,
   game_started: SOCKET_EVENTS.GAME_STARTED,
   card_revealed: SOCKET_EVENTS.CARD_REVEALED,
   board_updated: SOCKET_EVENTS.BOARD_UPDATED,
@@ -54,57 +71,8 @@ const frontendEvents = {
   clue_received: SOCKET_EVENTS.CLUE_RECEIVED,
   game_over: SOCKET_EVENTS.GAME_OVER,
   error_message: SOCKET_EVENTS.ERROR_MESSAGE,
-  chat_message: SOCKET_EVENTS.CHAT_MESSAGE
-};
-
-const acknowledgementFor = (event, payload = {}) => {
-  const base = {
-    ok: true,
-    event,
-    receivedAt: new Date().toISOString()
-  };
-
-  const responses = {
-    [SOCKET_EVENTS.JOIN_ROOM]: {
-      ...base,
-      roomCode: payload.roomCode || createRoomCode(),
-      message: 'Joined the room adda.'
-    },
-    [SOCKET_EVENTS.LEAVE_ROOM]: {
-      ...base,
-      message: 'Left the room.'
-    },
-    [SOCKET_EVENTS.GIVE_CLUE]: {
-      ...base,
-      clue: payload.clue
-    },
-    [SOCKET_EVENTS.MAKE_GUESS]: {
-      ...base,
-      cardId: payload.cardId
-    },
-    [SOCKET_EVENTS.CARD_REVEALED]: {
-      ...base,
-      cardId: payload.cardId
-    },
-    [SOCKET_EVENTS.CHAT_MESSAGE]: {
-      ...base,
-      message: payload.message
-    },
-    [SOCKET_EVENTS.EMOJI_REACTION]: {
-      ...base,
-      emoji: payload.emoji
-    },
-    [SOCKET_EVENTS.PLAYER_READY]: {
-      ...base,
-      ready: payload.ready
-    },
-    [SOCKET_EVENTS.GAME_STARTED]: {
-      ...base,
-      roomCode: payload.roomCode
-    }
-  };
-
-  return responses[event] || { ...base, payload };
+  chat_message: SOCKET_EVENTS.CHAT_MESSAGE,
+  heartbeat: SOCKET_EVENTS.HEARTBEAT
 };
 
 const cardIndexFromId = (cardId) => {
@@ -128,11 +96,11 @@ const normalizeCard = (card = {}) => {
   };
 };
 
+/**
+ * Map a raw client-side SOCKET_EVENTS key to the backend message format.
+ * Returns null if the event should not be sent to the server.
+ */
 const toBackendMessage = (event, payload = {}) => {
-  if (event === SOCKET_EVENTS.CARD_REVEALED) {
-    return null;
-  }
-
   const backendEvent = backendEvents[event];
   if (!backendEvent) {
     return null;
@@ -141,6 +109,9 @@ const toBackendMessage = (event, payload = {}) => {
   const dataByEvent = {
     [SOCKET_EVENTS.JOIN_ROOM]: {},
     [SOCKET_EVENTS.LEAVE_ROOM]: {},
+    [SOCKET_EVENTS.CHANGE_TEAM]: {
+      team: payload.team || 'spectator'
+    },
     [SOCKET_EVENTS.GIVE_CLUE]: {
       word: payload.clue?.word || payload.word,
       number: Number(payload.clue?.count || payload.number || payload.count || 1)
@@ -148,7 +119,7 @@ const toBackendMessage = (event, payload = {}) => {
     [SOCKET_EVENTS.MAKE_GUESS]: {
       card_index: cardIndexFromId(payload.cardId)
     },
-    [SOCKET_EVENTS.GAME_STARTED]: {
+    [SOCKET_EVENTS.START_GAME]: {
       word_pack: payload.wordPack || 'india',
       seed: payload.seed || payload.roomCode || createRoomCode()
     },
@@ -169,10 +140,21 @@ const toBackendMessage = (event, payload = {}) => {
   };
 };
 
+/**
+ * Normalize a raw server message into a flat frontend event object.
+ * All data fields are promoted to top level so consumers can read
+ * lastEvent.board, lastEvent.team, etc. directly.
+ */
 const fromBackendMessage = (message) => {
+  // Ignore heartbeat pings — do not pollute lastEvent
+  if (message.event === 'heartbeat') {
+    return null;
+  }
+
   let event = frontendEvents[message.event] || message.event;
   const data = message.data || {};
 
+  // Remap chat_message with reaction field to emoji-reaction
   if (message.event === 'chat_message' && data.reaction) {
     event = SOCKET_EVENTS.EMOJI_REACTION;
   }
@@ -188,6 +170,10 @@ const fromBackendMessage = (message) => {
   };
 };
 
+/**
+ * Low-level WebSocket client factory.
+ * Keeps a listener registry for event-based consumption.
+ */
 export const createSocketClient = (url, options = {}) => {
   const listeners = new Map();
   const queued = [];
@@ -203,20 +189,21 @@ export const createSocketClient = (url, options = {}) => {
     off(event, callback) {
       listeners.get(event)?.delete(callback);
     },
-    async emit(event, payload = {}, acknowledgement) {
-      const response = acknowledgementFor(event, payload);
+    /**
+     * Send a message to the server. Returns true if the message was queued/sent.
+     * Does NOT return a synthetic ACK — callers should wait for the real server event.
+     */
+    send(event, payload = {}) {
       const message = toBackendMessage(event, payload);
-
-      if (message) {
-        if (websocket.readyState === WebSocket.OPEN) {
-          websocket.send(JSON.stringify(message));
-        } else {
-          queued.push(message);
-        }
+      if (!message) {
+        return false;
       }
-
-      acknowledgement?.(response);
-      return response;
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify(message));
+      } else {
+        queued.push(message);
+      }
+      return true;
     },
     disconnect() {
       listeners.clear();
@@ -233,14 +220,15 @@ export const createSocketClient = (url, options = {}) => {
     options.onOpen?.();
   });
 
-  websocket.addEventListener('message', (event) => {
+  websocket.addEventListener('message', (rawEvent) => {
     let parsed;
     try {
-      parsed = JSON.parse(event.data);
+      parsed = JSON.parse(rawEvent.data);
     } catch {
       return;
     }
     const response = fromBackendMessage(parsed);
+    if (!response) return; // heartbeat or unrecognized — skip
     listeners.get(response.event)?.forEach((callback) => callback(response));
     options.onMessage?.(response);
   });
@@ -257,6 +245,15 @@ export const createSocketClient = (url, options = {}) => {
   return client;
 };
 
+/**
+ * React hook that manages a WebSocket connection for a given roomCode.
+ *
+ * Key design decisions:
+ * - A new socket is only created when roomCode changes.
+ * - `emit()` sends to the server but does NOT update lastEvent with synthetic ACKs.
+ *   Only real server messages update lastEvent, preventing self-triggering loops.
+ * - Heartbeat messages are suppressed so they don't clutter event consumers.
+ */
 export const useSocket = (roomCode) => {
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
@@ -276,10 +273,13 @@ export const useSocket = (roomCode) => {
     socketRef.current = createSocketClient(url, {
       onOpen: () => {
         setConnected(true);
+        // Send join_room immediately so the server broadcasts our presence with
+        // full username + team info to all connected clients.
         if (roomCode) {
-          socketRef.current?.emit(SOCKET_EVENTS.JOIN_ROOM, { roomCode }).then(setLastEvent);
+          socketRef.current?.send(SOCKET_EVENTS.JOIN_ROOM, { roomCode });
         }
       },
+      // Only real server events update lastEvent (not synthetic ACKs)
       onMessage: setLastEvent,
       onClose: () => setConnected(false),
       onError: () => setConnected(false)
@@ -287,21 +287,24 @@ export const useSocket = (roomCode) => {
 
     return () => {
       if (roomCode) {
-        socketRef.current?.emit(SOCKET_EVENTS.LEAVE_ROOM, { roomCode });
+        socketRef.current?.send(SOCKET_EVENTS.LEAVE_ROOM, { roomCode });
       }
       socketRef.current?.disconnect();
       setConnected(false);
     };
   }, [roomCode]);
 
-  const emit = useCallback(async (event, payload) => {
+  /**
+   * Send a message to the server.
+   * Does NOT return a synthetic ACK — await a corresponding server event instead.
+   * Returns a Promise<boolean> for backwards compatibility with callers that use await.
+   */
+  const emit = useCallback((event, payload) => {
     if (!socketRef.current) {
-      throw new Error('Socket connection is not available.');
+      return Promise.reject(new Error('Socket connection is not available.'));
     }
-
-    const response = await socketRef.current.emit(event, payload);
-    setLastEvent(response);
-    return response;
+    const sent = socketRef.current.send(event, payload);
+    return Promise.resolve(sent);
   }, []);
 
   return useMemo(

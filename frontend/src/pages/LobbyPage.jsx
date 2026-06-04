@@ -9,7 +9,6 @@ import { ChatPanel } from '../components/lobby/ChatPanel.jsx';
 import { InvitePanel } from '../components/lobby/InvitePanel.jsx';
 import { RoomSettings } from '../components/lobby/RoomSettings.jsx';
 import { TeamSlot } from '../components/lobby/TeamSlot.jsx';
-import { VoiceChat } from '../components/game/VoiceChat.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useGame } from '../hooks/useGame.js';
@@ -23,10 +22,20 @@ const LobbyPage = () => {
   const { roomCode } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { players, readyPlayers, roomSettings, toggleReady, startGame, setRoomState } = useGame();
+  const { players, readyPlayers, roomSettings, room, gameStarted, toggleReady, startGame, setRoomState } = useGame();
   const { emit, connected, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('Teams');
+
+  // ── Determine admin status ────────────────────────────────────────────────
+  // The room object (fetched via REST on load and set via SET_ROOM_STATE) contains
+  // host_id. Compare against the authenticated user's id to gate the Start Game button.
+  const isAdmin = useMemo(() => {
+    if (!user?.id || !room) return false;
+    // room.host_id comes from RoomRead schema (UUID string after normalizeRoom)
+    const hostId = room.host_id || room.hostId;
+    return String(hostId) === String(user.id);
+  }, [user?.id, room]);
 
   const grouped = useMemo(
     () => ({
@@ -39,51 +48,15 @@ const LobbyPage = () => {
 
   const ready = user?.id ? readyPlayers.includes(user.id) : false;
 
-  const handleReady = async () => {
-    if (!user?.id) {
-      showToast({
-        type: 'warning',
-        title: 'Sign in to ready up',
-        message: 'Log in to toggle your ready status for this room.'
-      });
-      return;
+  // ── Navigate to game when server broadcasts game_started ─────────────────
+  // This fires for ALL players — not just the admin — so everyone transitions.
+  useEffect(() => {
+    if (gameStarted && roomCode) {
+      navigate(`/game/${roomCode}`);
     }
+  }, [gameStarted, navigate, roomCode]);
 
-    try {
-      toggleReady(user.id);
-      await emit(SOCKET_EVENTS.PLAYER_READY, { playerId: user.id, ready: !ready });
-    } catch (error) {
-      showToast({ type: 'error', title: 'Ready update failed', message: error.message });
-    }
-  };
-
-  const handleStart = async () => {
-    try {
-      startGame();
-      await emit(SOCKET_EVENTS.GAME_STARTED, { roomCode, wordPack: roomSettings.wordPack || 'india' });
-      navigate(roomCode ? `/game/${roomCode}` : '/game');
-    } catch (error) {
-      showToast({ type: 'error', title: 'Game start failed', message: error.message });
-    }
-  };
-
-  const handleJoinTeam = (team) => {
-    showToast({
-      type: 'info',
-      title: 'Team selection locked',
-      message: `Team assignments are handled by the room host for ${team}.`
-    });
-  };
-
-  const handleDragEnd = (_, info) => {
-    if (Math.abs(info.offset.x) < 70) {
-      return;
-    }
-    const current = tabs.indexOf(activeTab);
-    const next = info.offset.x < 0 ? Math.min(tabs.length - 1, current + 1) : Math.max(0, current - 1);
-    setActiveTab(tabs[next]);
-  };
-
+  // ── Register the room code with the socket context ────────────────────────
   useEffect(() => {
     setRoomCode(roomCode || '');
     if (!roomCode) {
@@ -108,6 +81,63 @@ const LobbyPage = () => {
     };
   }, [roomCode, setRoomCode, setRoomState, showToast]);
 
+  const handleReady = () => {
+    if (!user?.id) {
+      showToast({
+        type: 'warning',
+        title: 'Sign in to ready up',
+        message: 'Log in to toggle your ready status for this room.'
+      });
+      return;
+    }
+    // Optimistic local toggle
+    toggleReady(user.id);
+    try {
+      emit(SOCKET_EVENTS.PLAYER_READY, { is_ready: !ready });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Ready update failed', message: error.message });
+    }
+  };
+
+  const handleStart = () => {
+    if (!isAdmin) {
+      showToast({ type: 'error', title: 'Not authorised', message: 'Only the room admin can start the game.' });
+      return;
+    }
+    // Reset local game state in context (board, score, winner)
+    startGame();
+    try {
+      // Send start_game to server. The server will broadcast game_started to
+      // all clients. The useEffect above will navigate everyone to /game/:roomCode.
+      emit(SOCKET_EVENTS.START_GAME, { roomCode, wordPack: roomSettings.wordPack || 'india' });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Game start failed', message: error.message });
+    }
+  };
+
+  const handleJoinTeam = (team) => {
+    if (!user?.id) {
+      showToast({ type: 'warning', title: 'Sign in first', message: 'Log in to join a team.' });
+      return;
+    }
+    try {
+      // Emit change_team — the server will update the DB and broadcast team_changed
+      // to all clients, which GameContext handles by calling UPSERT_PLAYER.
+      emit(SOCKET_EVENTS.CHANGE_TEAM, { team });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Team change failed', message: error.message });
+    }
+  };
+
+  const handleDragEnd = (_, info) => {
+    if (Math.abs(info.offset.x) < 70) {
+      return;
+    }
+    const current = tabs.indexOf(activeTab);
+    const next = info.offset.x < 0 ? Math.min(tabs.length - 1, current + 1) : Math.max(0, current - 1);
+    setActiveTab(tabs[next]);
+  };
+
   return (
     <div className="space-y-5">
       <section className="glass-panel rangoli-border rounded-2xl p-5">
@@ -119,16 +149,29 @@ const LobbyPage = () => {
             </Badge>
             <h1 className="mt-3 font-heading text-4xl font-bold text-cream light:text-slate-900">Multiplayer Lobby</h1>
             <p className="text-cream/65 light:text-slate-600">
-              {roomCode ? `Room ${roomCode}` : 'Lobby'} • {players.length} players • timer {roomSettings.timerLength}s
+              {roomCode ? `Room ${roomCode}` : 'Lobby'} • {players.length} players
+              {isAdmin ? (
+                <span className="ml-2 rounded bg-saffron/20 px-1.5 py-0.5 text-xs font-bold text-saffron">ADMIN</span>
+              ) : null}
             </p>
           </div>
+
           <div className="grid gap-2 sm:grid-cols-2">
-            <Button variant={ready ? 'secondary' : 'primary'} icon={CheckCircle2} onClick={handleReady} aria-label="Toggle ready status">
-              {ready ? 'Ready' : 'Mark Ready'}
+            <Button
+              variant={ready ? 'secondary' : 'primary'}
+              icon={CheckCircle2}
+              onClick={handleReady}
+              aria-label="Toggle ready status"
+            >
+              {ready ? 'Ready ✓' : 'Mark Ready'}
             </Button>
-            <Button icon={Play} onClick={handleStart} aria-label="Start game">
-              Start Game
-            </Button>
+
+            {/* Start Game is only rendered for the room admin */}
+            {isAdmin ? (
+              <Button icon={Play} onClick={handleStart} aria-label="Start game">
+                Start Game
+              </Button>
+            ) : null}
           </div>
         </div>
       </section>
@@ -158,7 +201,7 @@ const LobbyPage = () => {
               </div>
             ) : null}
             {activeTab === 'Chat' ? <ChatPanel /> : null}
-            {activeTab === 'Settings' ? <RoomSettings /> : null}
+            {activeTab === 'Settings' ? <RoomSettings isAdmin={isAdmin} /> : null}
           </motion.div>
 
           <div className="hidden gap-4 md:grid lg:grid-cols-2">
@@ -166,9 +209,8 @@ const LobbyPage = () => {
             <TeamSlot team="blue" players={grouped.blue} readyPlayers={readyPlayers} maxPlayers={roomSettings.maxTeamSize} onJoin={handleJoinTeam} />
           </div>
           <div className="hidden md:block">
-            <RoomSettings />
+            <RoomSettings isAdmin={isAdmin} />
           </div>
-          <VoiceChat players={players} />
         </div>
 
         <aside className="space-y-5">

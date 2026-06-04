@@ -29,7 +29,10 @@ const initialState = {
   readyPlayers: [],
   roomSettings: DEFAULT_ROOM_SETTINGS,
   winner: null,
-  timerSeconds: DEFAULT_ROOM_SETTINGS.timerLength
+  timerSeconds: DEFAULT_ROOM_SETTINGS.timerLength,
+  // gameStarted is true once the server broadcasts game_started.
+  // Pages listen to this flag to trigger navigation.
+  gameStarted: false
 };
 
 const normalizeClue = (clue = {}) => ({
@@ -39,18 +42,34 @@ const normalizeClue = (clue = {}) => ({
   from: clue.from || null
 });
 
+/**
+ * Build a normalised player object from a WebSocket event payload.
+ * Prefers `username` and `name` fields (set by the updated backend join_room handler)
+ * over the old UUID-based fallback.
+ */
 const playerFromEvent = (payload = {}) => {
   const id = String(payload.user_id || payload.playerId || payload.id || '');
   if (!id) {
     return null;
   }
 
+  // The updated backend sends username and name in player_joined / team_changed events.
+  const displayName =
+    payload.name ||
+    payload.username ||
+    `Player ${id.slice(0, 6)}`;
+
   return {
     id,
-    name: payload.name || payload.username || `Player ${id.slice(0, 6)}`,
+    name: displayName,
     handle: payload.username ? `@${payload.username}` : '',
     team: payload.team || TEAM_TYPES.SPECTATOR,
-    role: payload.role === 'spymaster' ? 'Spymaster' : payload.role === 'operative' ? 'Operative' : payload.role || 'Operative',
+    role:
+      payload.role === 'spymaster'
+        ? 'Spymaster'
+        : payload.role === 'operative'
+          ? 'Operative'
+          : payload.role || 'Operative',
     status: 'online',
     level: Number(payload.level ?? 1),
     winRate: Number(payload.winRate ?? payload.win_rate ?? 0)
@@ -94,8 +113,29 @@ const gameReducer = (state, action) => {
       return {
         ...state,
         players: exists
-          ? state.players.map((item) => (item.id === player.id ? { ...item, ...player } : item))
+          ? state.players.map((item) =>
+              item.id === player.id
+                ? {
+                    // Preserve existing name if the new event has a UUID-based fallback
+                    // (e.g. older ready_up events that don't include username).
+                    ...item,
+                    ...player,
+                    name:
+                      player.name && !player.name.startsWith('Player ')
+                        ? player.name
+                        : item.name || player.name
+                  }
+                : item
+            )
           : [...state.players, player]
+      };
+    }
+    case 'REMOVE_PLAYER': {
+      const removeId = String(action.payload || '');
+      return {
+        ...state,
+        players: state.players.filter((p) => p.id !== removeId),
+        readyPlayers: state.readyPlayers.filter((id) => id !== removeId)
       };
     }
     case 'SET_READY': {
@@ -170,7 +210,13 @@ const gameReducer = (state, action) => {
         spymasterBoard: [],
         serverScore: emptyScore,
         winner: null,
+        gameStarted: false,
         timerSeconds: state.roomSettings.timerLength
+      };
+    case 'GAME_STARTED_FROM_SERVER':
+      return {
+        ...state,
+        gameStarted: true
       };
     case 'SET_TIMER':
       return { ...state, timerSeconds: action.payload };
@@ -191,6 +237,7 @@ export const GameProvider = ({ children }) => {
 
     switch (lastEvent.event) {
       case SOCKET_EVENTS.GAME_STARTED:
+        // Set the board, scores, turn from the server-authoritative state
         dispatch({
           type: 'SET_BOARD',
           payload: {
@@ -201,37 +248,61 @@ export const GameProvider = ({ children }) => {
         dispatch({ type: 'SET_TURN', payload: lastEvent.current_team });
         dispatch({ type: 'GIVE_CLUE', payload: lastEvent.current_clue || {} });
         dispatch({ type: 'SET_WINNER', payload: lastEvent.winner_team });
+        // Signal to lobby/game pages that the game has started (triggers navigation)
+        dispatch({ type: 'GAME_STARTED_FROM_SERVER' });
         break;
+
       case SOCKET_EVENTS.BOARD_UPDATED:
         dispatch({ type: 'SET_BOARD', payload: { board: lastEvent.board || [], score: lastEvent.scores } });
         break;
+
       case SOCKET_EVENTS.SPYMASTER_BOARD_UPDATED:
         dispatch({ type: 'SET_SPYMASTER_BOARD', payload: lastEvent.board || [] });
         break;
+
       case SOCKET_EVENTS.CARD_REVEALED:
         if (lastEvent.card) {
           dispatch({ type: 'APPLY_CARD', payload: lastEvent.card });
         }
         break;
+
       case SOCKET_EVENTS.SCORE_UPDATED:
         dispatch({ type: 'SET_SCORE', payload: lastEvent.scores || {} });
         break;
+
       case SOCKET_EVENTS.TURN_CHANGED:
         dispatch({ type: 'SET_TURN', payload: lastEvent.current_team });
         break;
+
       case SOCKET_EVENTS.CLUE_RECEIVED:
         dispatch({ type: 'GIVE_CLUE', payload: lastEvent.clue || {} });
         break;
+
       case SOCKET_EVENTS.GAME_OVER:
         dispatch({ type: 'SET_WINNER', payload: lastEvent.winner_team });
         break;
+
       case SOCKET_EVENTS.PLAYER_JOINED:
         if (lastEvent.is_ready !== undefined) {
+          // ready_up response — update ready status only
           dispatch({ type: 'SET_READY', payload: { playerId: lastEvent.user_id, ready: Boolean(lastEvent.is_ready) } });
         } else {
+          // Full player join — includes username, team, role from the server
           dispatch({ type: 'UPSERT_PLAYER', payload: lastEvent });
         }
         break;
+
+      case SOCKET_EVENTS.PLAYER_LEFT:
+        // Remove the player from the local players list
+        dispatch({ type: 'REMOVE_PLAYER', payload: lastEvent.user_id });
+        break;
+
+      case SOCKET_EVENTS.TEAM_CHANGED:
+        // A player changed teams — update their team + role in local state.
+        // The server sends username + team + role in the team_changed event.
+        dispatch({ type: 'UPSERT_PLAYER', payload: lastEvent });
+        break;
+
       case SOCKET_EVENTS.CHAT_MESSAGE:
         if (lastEvent.message) {
           dispatch({
@@ -245,11 +316,13 @@ export const GameProvider = ({ children }) => {
           });
         }
         break;
+
       case SOCKET_EVENTS.EMOJI_REACTION:
         if (lastEvent.reaction) {
           dispatch({ type: 'ADD_REACTION', payload: { emoji: lastEvent.reaction, player: playerFromEvent({ user_id: lastEvent.sender_id }) } });
         }
         break;
+
       default:
         break;
     }

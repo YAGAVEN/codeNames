@@ -11,9 +11,10 @@ from app.game.game_manager import GameManager
 from app.game.word_service import WordService
 from app.repositories.room_player_repository import RoomPlayerRepository
 from app.repositories.room_repository import RoomRepository
+from app.repositories.user_repository import UserRepository
 from app.schemas.websocket import ClientEvent
-from app.utils.constants import ChatType, PlayerRole, Team
-from app.utils.exceptions import AppError, GameRuleError
+from app.utils.constants import ChatType, PlayerRole, RoomStatus, Team
+from app.utils.exceptions import AppError, AuthorizationError, GameRuleError
 from app.utils.validators import sanitise_chat_message
 from app.websocket.connection_manager import ConnectionManager
 
@@ -62,6 +63,21 @@ async def _membership(context: EventContext) -> tuple[Team, PlayerRole]:
     if membership is None:
         return Team.SPECTATOR, PlayerRole.OPERATIVE
     return membership.team, membership.role
+
+
+async def _get_username(context: EventContext) -> str:
+    """Fetch the display username for the current connected user."""
+    user_id = _user_uuid(context.user_id)
+    if user_id is None:
+        return f"Player {context.user_id[:6]}"
+    try:
+        user_repo = UserRepository(context.db)
+        user = await user_repo.get(user_id)
+        if user is not None and user.username:
+            return user.username
+    except Exception:
+        pass
+    return f"Player {context.user_id[:6]}"
 
 
 def _public_card(card: dict[str, Any]) -> dict[str, Any]:
@@ -142,9 +158,28 @@ async def create_room(context: EventContext, data: dict[str, Any]) -> None:
 
 @websocket_handler("join_room")
 async def join_room(context: EventContext, data: dict[str, Any]) -> None:
-    """Join room presence and store realtime membership metadata."""
+    """Join room presence and broadcast full player info to all connected clients.
+
+    This is the authoritative player_joined broadcast — it includes the username
+    so all clients can display the correct player name immediately.
+    """
     team, role = await _membership(context)
-    await context.manager.broadcast(context.room_id, "player_joined", {"user_id": context.user_id, "team": team.value, "role": role.value})
+    username = await _get_username(context)
+
+    # Broadcast full player info to everyone in the room (including the joining player).
+    await context.manager.broadcast(
+        context.room_id,
+        "player_joined",
+        {
+            "user_id": context.user_id,
+            "username": username,
+            "name": username,
+            "team": team.value,
+            "role": role.value,
+        },
+    )
+
+    # If a game is already in progress, send the current state to the late-joining player.
     try:
         state = await GameManager().load_state(context.room_id)
     except GameRuleError:
@@ -166,6 +201,56 @@ async def leave_room(context: EventContext, data: dict[str, Any]) -> None:
     await context.manager.disconnect(context.room_id, context.user_id)
 
 
+@websocket_handler("change_team")
+async def change_team(context: EventContext, data: dict[str, Any]) -> None:
+    """Allow a player to switch teams before the game starts.
+
+    Validates the room is in waiting state, updates the DB membership,
+    then broadcasts the new team assignment to all connected clients.
+    """
+    room_id = await _room_uuid(context)
+    user_id = _user_uuid(context.user_id)
+    if room_id is None or user_id is None:
+        raise GameRuleError("Invalid room or user")
+
+    # Validate request team value
+    raw_team = str(data.get("team", "")).lower()
+    try:
+        new_team = Team(raw_team)
+    except ValueError:
+        raise GameRuleError(f"Invalid team '{raw_team}'. Must be 'red', 'blue', or 'spectator'")
+
+    # Ensure the room is still in lobby (waiting) state
+    room_repo = RoomRepository(context.db)
+    room = await room_repo.get(room_id)
+    if room is None:
+        raise GameRuleError("Room not found")
+    if room.status != RoomStatus.WAITING:
+        raise GameRuleError("Team changes are not allowed once the game has started")
+
+    # Update DB and get new membership details
+    player_repo = RoomPlayerRepository(context.db)
+    membership = await player_repo.set_team(room_id, user_id, new_team)
+    if membership is None:
+        raise GameRuleError("You are not a member of this room")
+    await player_repo.commit()
+
+    username = await _get_username(context)
+
+    # Broadcast the team change to ALL connected clients
+    await context.manager.broadcast(
+        context.room_id,
+        "team_changed",
+        {
+            "user_id": context.user_id,
+            "username": username,
+            "name": username,
+            "team": membership.team.value,
+            "role": membership.role.value,
+        },
+    )
+
+
 @websocket_handler("ready_up")
 async def ready_up(context: EventContext, data: dict[str, Any]) -> None:
     """Mark a player ready in the database."""
@@ -181,13 +266,38 @@ async def ready_up(context: EventContext, data: dict[str, Any]) -> None:
 
 @websocket_handler("start_game")
 async def start_game(context: EventContext, data: dict[str, Any]) -> None:
-    """Start a new server-authoritative game state."""
-    pack_name = str(data.get("word_pack", "cities"))
+    """Start a new server-authoritative game state.
+
+    Only the room host (admin) may call this. The server validates
+    the requester's user_id against the room.host_id before proceeding.
+    """
+    room_id = await _room_uuid(context)
+    if room_id is None:
+        raise GameRuleError("Invalid room")
+
+    # ── Admin check ──────────────────────────────────────────────────────────
+    room = await RoomRepository(context.db).get(room_id)
+    if room is None:
+        raise GameRuleError("Room not found")
+    if str(room.host_id) != context.user_id:
+        raise AuthorizationError("Only the room admin can start the game")
+    # ─────────────────────────────────────────────────────────────────────────
+
+    pack_name = str(data.get("word_pack", "india"))
     seed = str(data.get("seed") or uuid4())
-    words = await WordService(context.settings).load_word_pack(pack_name)
+
+    # Load word pack with graceful fallback so a missing Supabase pack never
+    # prevents the game from starting.
+    try:
+        words = await WordService(context.settings).load_word_pack(pack_name)
+    except Exception:
+        from app.game.word_service import DEFAULT_WORDS
+        words = list(DEFAULT_WORDS)
+
     state = await GameManager().start_game(context.room_id, words, seed, pack_name)
-    await context.manager.broadcast(context.room_id, "game_started", _public_state(state))
-    await context.manager.broadcast(context.room_id, "board_updated", {"board": _public_state(state)["board"], "scores": _score_payload(state)})
+    public = _public_state(state)
+    await context.manager.broadcast(context.room_id, "game_started", public)
+    await context.manager.broadcast(context.room_id, "board_updated", {"board": public["board"], "scores": _score_payload(state)})
     await _send_spymaster_board(context, state)
 
 
