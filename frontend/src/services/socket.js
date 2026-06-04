@@ -256,8 +256,10 @@ export const createSocketClient = (url, options = {}) => {
  */
 export const useSocket = (roomCode) => {
   const socketRef = useRef(null);
+  const eventSequenceRef = useRef(0);
   const [connected, setConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState(null);
+  const [eventQueue, setEventQueue] = useState([]);
 
   useEffect(() => {
     const token = getStoredToken();
@@ -266,10 +268,12 @@ export const useSocket = (roomCode) => {
       socketRef.current = null;
       setConnected(false);
       setLastEvent(null);
+      setEventQueue([]);
       return undefined;
     }
 
     const url = `${WS_BASE_URL}/${encodeURIComponent(roomCode || 'lobby')}?token=${encodeURIComponent(token)}`;
+    eventSequenceRef.current = 0;
     socketRef.current = createSocketClient(url, {
       onOpen: () => {
         setConnected(true);
@@ -279,8 +283,13 @@ export const useSocket = (roomCode) => {
           socketRef.current?.send(SOCKET_EVENTS.JOIN_ROOM, { roomCode });
         }
       },
-      // Only real server events update lastEvent (not synthetic ACKs)
-      onMessage: setLastEvent,
+      // Only real server events update state (not synthetic ACKs).
+      onMessage: (event) => {
+        const sequencedEvent = { ...event, sequence: eventSequenceRef.current + 1 };
+        eventSequenceRef.current += 1;
+        setLastEvent(sequencedEvent);
+        setEventQueue((queue) => [...queue.slice(-49), sequencedEvent]);
+      },
       onClose: () => setConnected(false),
       onError: () => setConnected(false)
     });
@@ -291,6 +300,7 @@ export const useSocket = (roomCode) => {
       }
       socketRef.current?.disconnect();
       setConnected(false);
+      setEventQueue([]);
     };
   }, [roomCode]);
 
@@ -312,8 +322,9 @@ export const useSocket = (roomCode) => {
       socket: socketRef.current,
       connected,
       lastEvent,
+      eventQueue,
       emit
     }),
-    [connected, emit, lastEvent]
+    [connected, emit, eventQueue, lastEvent]
   );
 };

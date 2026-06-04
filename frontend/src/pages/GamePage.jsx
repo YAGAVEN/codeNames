@@ -1,5 +1,5 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/pages/GamePage.jsx
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Eye, MessageCircle, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '../components/ui/Button.jsx';
@@ -21,11 +21,12 @@ import { SOCKET_EVENTS } from '../services/socket.js';
 const GamePage = () => {
   const { roomCode } = useParams();
   const navigate = useNavigate();
-  const { soundEnabled, setSoundEnabled } = useAuth();
+  const { soundEnabled, setSoundEnabled, user } = useAuth();
   const { board, score, currentTurn, clue, players, timerSeconds, roomSettings, setTimer, winner } = useGame();
   const { emit, lastEvent, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [chatOpen, setChatOpen] = useState(false);
+  const currentPlayer = useMemo(() => players.find((player) => player.id === user?.id) || null, [players, user?.id]);
 
   // Register room code so the socket connects to the correct room.
   // This covers players who navigate directly to /game/:roomCode (e.g. late joins,
@@ -55,6 +56,23 @@ const GamePage = () => {
   }, [lastEvent, showToast]);
 
   const handleReveal = async (cardId) => {
+    if (!user?.id || !currentPlayer) {
+      showToast({ type: 'warning', title: 'Join the room', message: 'Only room players can choose cards.' });
+      return;
+    }
+    if (currentPlayer.role !== 'Operative') {
+      showToast({ type: 'warning', title: 'Spymaster turn', message: 'Spymasters give clues; operatives choose cards.' });
+      return;
+    }
+    if (currentPlayer.team !== currentTurn) {
+      showToast({ type: 'warning', title: 'Wait your turn', message: `${currentTurn === 'red' ? 'Red' : 'Blue'} team is choosing now.` });
+      return;
+    }
+    if (!clue?.word) {
+      showToast({ type: 'warning', title: 'Awaiting clue', message: 'Cards can be chosen after the spymaster clue.' });
+      return;
+    }
+
     try {
       // card_index is the numeric index extracted from boardId by socket.js
       await emit(SOCKET_EVENTS.MAKE_GUESS, { cardId });

@@ -5,8 +5,12 @@ import { Button } from '../ui/Button.jsx';
 import { useGame } from '../../hooks/useGame.js';
 import { WORD_PACK_OPTIONS } from '../../utils/constants.js';
 
-export const RoomSettings = () => {
+export const RoomSettings = ({ isAdmin = false }) => {
   const { roomSettings, updateRoomSettings } = useGame();
+
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <section className="glass-panel rounded-2xl p-4">

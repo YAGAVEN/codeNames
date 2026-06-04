@@ -16,13 +16,13 @@ import { useSocket } from '../hooks/useSocket.js';
 import { fetchRoomByCode } from '../services/api.js';
 import { SOCKET_EVENTS } from '../services/socket.js';
 
-const tabs = ['Teams', 'Chat', 'Settings'];
+const lobbyTabs = ['Teams', 'Chat', 'Settings'];
 
 const LobbyPage = () => {
   const { roomCode } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { players, readyPlayers, roomSettings, room, gameStarted, toggleReady, startGame, setRoomState } = useGame();
+  const { players, readyPlayers, roomSettings, room, gameStarted, toggleReady, setRoomState } = useGame();
   const { emit, connected, lastEvent, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('Teams');
@@ -47,6 +47,7 @@ const LobbyPage = () => {
   );
 
   const ready = user?.id ? readyPlayers.includes(user.id) : false;
+  const visibleTabs = useMemo(() => (isAdmin ? lobbyTabs : lobbyTabs.filter((tab) => tab !== 'Settings')), [isAdmin]);
 
   // ── Navigate to game when server broadcasts game_started ─────────────────
   // This fires for ALL players — not just the admin — so everyone transitions.
@@ -55,6 +56,12 @@ const LobbyPage = () => {
       navigate(`/game/${roomCode}`);
     }
   }, [gameStarted, navigate, roomCode]);
+
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab('Teams');
+    }
+  }, [activeTab, visibleTabs]);
 
   useEffect(() => {
     if (lastEvent?.event === SOCKET_EVENTS.ERROR_MESSAGE) {
@@ -115,8 +122,6 @@ const LobbyPage = () => {
       showToast({ type: 'error', title: 'Not authorised', message: 'Only the room admin can start the game.' });
       return;
     }
-    // Reset local game state in context (board, score, winner)
-    startGame();
     try {
       // Send start_game to server. The server will broadcast game_started to
       // all clients. The useEffect above will navigate everyone to /game/:roomCode.
@@ -144,9 +149,9 @@ const LobbyPage = () => {
     if (Math.abs(info.offset.x) < 70) {
       return;
     }
-    const current = tabs.indexOf(activeTab);
-    const next = info.offset.x < 0 ? Math.min(tabs.length - 1, current + 1) : Math.max(0, current - 1);
-    setActiveTab(tabs[next]);
+    const current = visibleTabs.indexOf(activeTab);
+    const next = info.offset.x < 0 ? Math.min(visibleTabs.length - 1, current + 1) : Math.max(0, current - 1);
+    setActiveTab(visibleTabs[next]);
   };
 
   return (
@@ -191,7 +196,7 @@ const LobbyPage = () => {
         <div className="space-y-5">
           <div className="md:hidden">
             <div className="grid grid-cols-3 gap-2 rounded-xl bg-white/5 p-1">
-              {tabs.map((tab) => (
+              {visibleTabs.map((tab) => (
                 <button
                   key={tab}
                   type="button"

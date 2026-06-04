@@ -1,5 +1,5 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/context/GameContext.jsx
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { calculateScore, revealCardById } from '../services/gameLogic.js';
 import { useSocket } from '../hooks/useSocket.js';
 import { SOCKET_EVENTS } from '../services/socket.js';
@@ -98,13 +98,15 @@ const gameReducer = (state, action) => {
     case 'SET_ROOM_STATE': {
       const room = action.payload || {};
       const settings = room.settings || {};
+      const roomInGame = room.status === 'In Game' || room.status === 'in_progress';
       return {
         ...state,
         room,
         players: room.players || state.players,
         readyPlayers: room.readyPlayers || state.readyPlayers,
         roomSettings: { ...state.roomSettings, ...settings },
-        timerSeconds: Number(settings.timerLength || state.timerSeconds)
+        timerSeconds: Number(settings.timerLength || state.timerSeconds),
+        gameStarted: roomInGame ? state.gameStarted : false
       };
     }
     case 'SET_BOARD':
@@ -118,6 +120,12 @@ const gameReducer = (state, action) => {
     case 'SET_SCORE':
       return { ...state, serverScore: { ...state.serverScore, ...action.payload } };
     case 'SET_TURN':
+      return {
+        ...state,
+        currentTurn: action.payload || TEAM_TYPES.RED,
+        clue: action.payload && action.payload === state.currentTurn ? state.clue : { word: '', count: 0, from: null }
+      };
+    case 'RESET_TURN':
       return { ...state, currentTurn: action.payload || TEAM_TYPES.RED, clue: { word: '', count: 0, from: null } };
     case 'SET_WINNER':
       return { ...state, winner: action.payload || null };
@@ -226,6 +234,8 @@ const gameReducer = (state, action) => {
         board: [],
         spymasterBoard: [],
         serverScore: emptyScore,
+        currentTurn: TEAM_TYPES.RED,
+        clue: { word: '', count: 0, from: null },
         winner: null,
         gameStarted: false,
         timerSeconds: state.roomSettings.timerLength
@@ -244,106 +254,109 @@ const gameReducer = (state, action) => {
 
 export const GameProvider = ({ children }) => {
   const [state, dispatch] = useReducer(gameReducer, initialState);
-  const { lastEvent } = useSocket();
+  const processedEventSequenceRef = useRef(0);
+  const { eventQueue } = useSocket();
   const setRoomState = useCallback((room) => dispatch({ type: 'SET_ROOM_STATE', payload: room }), []);
 
   useEffect(() => {
-    if (!lastEvent?.event) {
+    if (!eventQueue.length) {
+      processedEventSequenceRef.current = 0;
       return;
     }
 
-    switch (lastEvent.event) {
-      case SOCKET_EVENTS.GAME_STARTED:
-        // Set the board, scores, turn from the server-authoritative state
-        dispatch({
-          type: 'SET_BOARD',
-          payload: {
-            board: lastEvent.board || [],
-            score: lastEvent.scores
-          }
-        });
-        dispatch({ type: 'SET_TURN', payload: lastEvent.current_team });
-        dispatch({ type: 'GIVE_CLUE', payload: lastEvent.current_clue || {} });
-        dispatch({ type: 'SET_WINNER', payload: lastEvent.winner_team });
-        // Signal to lobby/game pages that the game has started (triggers navigation)
-        dispatch({ type: 'GAME_STARTED_FROM_SERVER' });
-        break;
+    const pendingEvents = eventQueue.filter((event) => event.sequence > processedEventSequenceRef.current);
+    if (!pendingEvents.length) {
+      return;
+    }
 
-      case SOCKET_EVENTS.BOARD_UPDATED:
-        dispatch({ type: 'SET_BOARD', payload: { board: lastEvent.board || [], score: lastEvent.scores } });
-        break;
-
-      case SOCKET_EVENTS.SPYMASTER_BOARD_UPDATED:
-        dispatch({ type: 'SET_SPYMASTER_BOARD', payload: lastEvent.board || [] });
-        break;
-
-      case SOCKET_EVENTS.CARD_REVEALED:
-        if (lastEvent.card) {
-          dispatch({ type: 'APPLY_CARD', payload: lastEvent.card });
-        }
-        break;
-
-      case SOCKET_EVENTS.SCORE_UPDATED:
-        dispatch({ type: 'SET_SCORE', payload: lastEvent.scores || {} });
-        break;
-
-      case SOCKET_EVENTS.TURN_CHANGED:
-        dispatch({ type: 'SET_TURN', payload: lastEvent.current_team });
-        break;
-
-      case SOCKET_EVENTS.CLUE_RECEIVED:
-        dispatch({ type: 'GIVE_CLUE', payload: lastEvent.clue || {} });
-        break;
-
-      case SOCKET_EVENTS.GAME_OVER:
-        dispatch({ type: 'SET_WINNER', payload: lastEvent.winner_team });
-        break;
-
-      case SOCKET_EVENTS.PLAYER_JOINED:
-        if (lastEvent.is_ready !== undefined) {
-          // ready_up response — update ready status only
-          dispatch({ type: 'SET_READY', payload: { playerId: lastEvent.user_id, ready: Boolean(lastEvent.is_ready) } });
-        } else {
-          // Full player join — includes username, team, role from the server
-          dispatch({ type: 'UPSERT_PLAYER', payload: lastEvent });
-        }
-        break;
-
-      case SOCKET_EVENTS.PLAYER_LEFT:
-        // Remove the player from the local players list
-        dispatch({ type: 'REMOVE_PLAYER', payload: lastEvent.user_id });
-        break;
-
-      case SOCKET_EVENTS.TEAM_CHANGED:
-        // A player changed teams — update their team + role in local state.
-        // The server sends username + team + role in the team_changed event.
-        dispatch({ type: 'UPSERT_PLAYER', payload: lastEvent });
-        break;
-
-      case SOCKET_EVENTS.CHAT_MESSAGE:
-        if (lastEvent.message) {
+    for (const socketEvent of pendingEvents) {
+      switch (socketEvent.event) {
+        case SOCKET_EVENTS.GAME_STARTED:
           dispatch({
-            type: 'ADD_CHAT_MESSAGE',
+            type: 'SET_BOARD',
             payload: {
-              id: `${lastEvent.sender_id}-${lastEvent.receivedAt}`,
-              author: playerFromEvent({ user_id: lastEvent.sender_id }),
-              message: lastEvent.message,
-              createdAt: lastEvent.receivedAt
+              board: socketEvent.board || [],
+              score: socketEvent.scores
             }
           });
-        }
-        break;
+          dispatch({ type: 'RESET_TURN', payload: socketEvent.current_team });
+          dispatch({ type: 'GIVE_CLUE', payload: socketEvent.current_clue || {} });
+          dispatch({ type: 'SET_WINNER', payload: socketEvent.winner_team });
+          dispatch({ type: 'GAME_STARTED_FROM_SERVER' });
+          break;
 
-      case SOCKET_EVENTS.EMOJI_REACTION:
-        if (lastEvent.reaction) {
-          dispatch({ type: 'ADD_REACTION', payload: { emoji: lastEvent.reaction, player: playerFromEvent({ user_id: lastEvent.sender_id }) } });
-        }
-        break;
+        case SOCKET_EVENTS.BOARD_UPDATED:
+          dispatch({ type: 'SET_BOARD', payload: { board: socketEvent.board || [], score: socketEvent.scores } });
+          break;
 
-      default:
-        break;
+        case SOCKET_EVENTS.SPYMASTER_BOARD_UPDATED:
+          dispatch({ type: 'SET_SPYMASTER_BOARD', payload: socketEvent.board || [] });
+          break;
+
+        case SOCKET_EVENTS.CARD_REVEALED:
+          if (socketEvent.card) {
+            dispatch({ type: 'APPLY_CARD', payload: socketEvent.card });
+          }
+          break;
+
+        case SOCKET_EVENTS.SCORE_UPDATED:
+          dispatch({ type: 'SET_SCORE', payload: socketEvent.scores || {} });
+          break;
+
+        case SOCKET_EVENTS.TURN_CHANGED:
+          dispatch({ type: 'SET_TURN', payload: socketEvent.current_team });
+          break;
+
+        case SOCKET_EVENTS.CLUE_RECEIVED:
+          dispatch({ type: 'GIVE_CLUE', payload: socketEvent.clue || {} });
+          break;
+
+        case SOCKET_EVENTS.GAME_OVER:
+          dispatch({ type: 'SET_WINNER', payload: socketEvent.winner_team });
+          break;
+
+        case SOCKET_EVENTS.PLAYER_JOINED:
+          if (socketEvent.is_ready !== undefined) {
+            dispatch({ type: 'SET_READY', payload: { playerId: socketEvent.user_id, ready: Boolean(socketEvent.is_ready) } });
+          } else {
+            dispatch({ type: 'UPSERT_PLAYER', payload: socketEvent });
+          }
+          break;
+
+        case SOCKET_EVENTS.PLAYER_LEFT:
+          dispatch({ type: 'REMOVE_PLAYER', payload: socketEvent.user_id });
+          break;
+
+        case SOCKET_EVENTS.TEAM_CHANGED:
+          dispatch({ type: 'UPSERT_PLAYER', payload: socketEvent });
+          break;
+
+        case SOCKET_EVENTS.CHAT_MESSAGE:
+          if (socketEvent.message) {
+            dispatch({
+              type: 'ADD_CHAT_MESSAGE',
+              payload: {
+                id: `${socketEvent.sender_id}-${socketEvent.receivedAt}`,
+                author: playerFromEvent({ user_id: socketEvent.sender_id }),
+                message: socketEvent.message,
+                createdAt: socketEvent.receivedAt
+              }
+            });
+          }
+          break;
+
+        case SOCKET_EVENTS.EMOJI_REACTION:
+          if (socketEvent.reaction) {
+            dispatch({ type: 'ADD_REACTION', payload: { emoji: socketEvent.reaction, player: playerFromEvent({ user_id: socketEvent.sender_id }) } });
+          }
+          break;
+
+        default:
+          break;
+      }
     }
-  }, [lastEvent]);
+    processedEventSequenceRef.current = pendingEvents[pendingEvents.length - 1].sequence;
+  }, [eventQueue]);
 
   const value = useMemo(
     () => ({

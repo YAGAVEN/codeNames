@@ -35,9 +35,15 @@ export const TeamPanel = ({ players, currentTurn }) => {
                 <h3 className={cn('font-label font-bold', styles.text)}>{styles.label}</h3>
                 <Badge tone={team === 'red' ? 'red' : team === 'blue' ? 'blue' : 'neutral'}>{teamPlayers.length}</Badge>
               </div>
-              <div className="mt-3 flex -space-x-2">
+              <div className="mt-3 space-y-2">
                 {teamPlayers.slice(0, 8).map((player) => (
-                  <PlayerAvatar key={player.id} player={player} size="sm" showLevel={false} className="ring-2 ring-night" />
+                  <div key={player.id} className="flex items-center gap-2 rounded-lg bg-white/5 p-2">
+                    <PlayerAvatar player={player} size="sm" showLevel={false} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-cream light:text-slate-900">{player.name}</p>
+                      <p className="text-xs text-cream/50 light:text-slate-500">{player.role}</p>
+                    </div>
+                  </div>
                 ))}
               </div>
             </article>
