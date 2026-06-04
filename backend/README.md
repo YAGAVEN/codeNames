@@ -23,7 +23,7 @@ alembic upgrade head
 
 The migration creates the public tables, RLS policies, and the `auth.users` trigger that keeps `public.users` in sync.
 The backend expects the asyncpg driver; plain `postgresql://` URLs are automatically upgraded to `postgresql+asyncpg://` at runtime.
-On IPv4-only hosts such as Render, use Supabase's session pooler connection string instead of the direct `db.<project>.supabase.co` host.
+On IPv4-only hosts such as Render, use Supabase's session pooler connection string instead of the direct `db.<project>.supabase.co` host. When a pooler host is detected, prepared statement caching is disabled to stay compatible with PgBouncer transaction pooling.
 
 ## Production (Render)
 

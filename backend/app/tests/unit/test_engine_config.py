@@ -11,6 +11,8 @@ def test_supabase_pooler_sslmode_is_converted_to_asyncpg_ssl() -> None:
     assert "sslmode" not in config.database_url
     assert make_url(config.database_url).password == "password"
     assert "ssl" in config.connect_args
+    assert config.connect_args["statement_cache_size"] == 0
+    assert config.engine_kwargs["prepared_statement_cache_size"] == 0
 
 
 def test_supabase_pooler_requires_ssl_without_query_param() -> None:
@@ -19,6 +21,18 @@ def test_supabase_pooler_requires_ssl_without_query_param() -> None:
     )
 
     assert "ssl" in config.connect_args
+    assert config.connect_args["statement_cache_size"] == 0
+    assert config.engine_kwargs["prepared_statement_cache_size"] == 0
+
+
+def test_supabase_direct_keeps_prepared_statement_cache() -> None:
+    config = build_engine_config(
+        "postgresql+asyncpg://postgres.project:password@db.project.supabase.co:5432/postgres"
+    )
+
+    assert "ssl" in config.connect_args
+    assert "statement_cache_size" not in config.connect_args
+    assert config.engine_kwargs == {}
 
 
 def test_non_supabase_sslmode_disable_is_stripped_without_ssl() -> None:

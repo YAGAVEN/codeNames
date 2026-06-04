@@ -47,26 +47,14 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_migrations_online() -> None:
     """Run migrations through SQLAlchemy's async engine."""
     engine_kwargs: dict[str, object] = {"poolclass": pool.NullPool}
+    if engine_config.engine_kwargs:
+        engine_kwargs.update(engine_config.engine_kwargs)
     if engine_config.connect_args:
         engine_kwargs["connect_args"] = engine_config.connect_args
     connectable = create_async_engine(database_url, **engine_kwargs)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()
-    
-async def run_migrations_online() -> None:
-    engine_kwargs: dict[str, object] = {"poolclass": pool.NullPool}
-
-    if engine_config.connect_args:
-        engine_kwargs["connect_args"] = engine_config.connect_args
-
-    print("DATABASE_URL =", database_url)
-    print("CONNECT_ARGS =", engine_config.connect_args)
-
-    connectable = create_async_engine(
-        database_url,
-        **engine_kwargs,
-    )
 
 
 if context.is_offline_mode():

@@ -56,12 +56,26 @@ class AuthService:
     async def register(self, payload: RegisterRequest) -> AuthTokens:
         """Register with Supabase Auth and create/sync the users profile row."""
         supabase_user_id: UUID | None = await self._supabase_sign_up(payload)
-        try:
-            user = await self.users.create(payload.username, str(payload.email), supabase_user_id)
-            await self.users.commit()
-            await self.users.refresh(user)
-        except IntegrityError as exc:
-            raise ConflictError("Username or email is already registered") from exc
+        user = None
+        if supabase_user_id:
+            user = await self.users.get(supabase_user_id)
+            if user is None:
+                user = await self.users.get_by_email(str(payload.email))
+
+        if user is None:
+            try:
+                user = await self.users.create(payload.username, str(payload.email), supabase_user_id)
+                await self.users.commit()
+                await self.users.refresh(user)
+            except IntegrityError as exc:
+                await self.users.session.rollback()
+                if not supabase_user_id:
+                    raise ConflictError("Username or email is already registered") from exc
+                user = await self.users.get(supabase_user_id)
+                if user is None:
+                    user = await self.users.get_by_email(str(payload.email))
+                if user is None:
+                    raise ConflictError("Username or email is already registered") from exc
         logger.info("verification_email_requested", extra={"user_id": str(user.id)})
         return await self._issue_tokens(user.id, user.role)
 
