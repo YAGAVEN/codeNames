@@ -64,12 +64,28 @@ const request = async (path, { method = 'GET', body, auth = true } = {}) => {
 
 const titleCase = (value = '') =>
   value
-    .replace(/[_./-]+/g, ' ')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
     .trim()
     .split(/\s+/)
     .filter(Boolean)
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(' ');
+
+const stripGeneratedSuffix = (value = '') => String(value).replace(/_[a-f0-9]{6}$/i, '');
+
+const cleanUsername = (value = '') =>
+  stripGeneratedSuffix(value)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const displayNameFromUsername = (value = '') => titleCase(cleanUsername(value) || stripGeneratedSuffix(value) || 'player');
+
+const displayHandleFromUsername = (value = '') => {
+  const username = cleanUsername(value);
+  return username ? `@${username}` : '';
+};
 
 const toUsername = ({ name, email }) => {
   const source = name || email?.split('@')[0] || 'player';
@@ -85,7 +101,8 @@ const toUsername = ({ name, email }) => {
 
 export const normalizeUser = (user = {}) => {
   const id = String(user.id || user.user_id || '');
-  const username = user.username || user.handle?.replace(/^@/, '') || user.name || 'player';
+  const rawUsername = user.username || user.handle?.replace(/^@/, '') || user.name || 'player';
+  const username = cleanUsername(rawUsername) || 'player';
   const wins = Number(user.win_count ?? user.wins ?? 0);
   const losses = Number(user.lose_count ?? user.losses ?? 0);
   const winRate = user.winRate ?? user.win_rate ?? (wins + losses > 0 ? Math.round((wins / (wins + losses)) * 100) : 0);
@@ -94,8 +111,8 @@ export const normalizeUser = (user = {}) => {
 
   return {
     id,
-    name: user.name || titleCase(username),
-    handle: user.handle || (username ? `@${username}` : ''),
+    name: displayNameFromUsername(user.name || rawUsername),
+    handle: displayHandleFromUsername(user.handle?.replace(/^@/, '') || rawUsername),
     email: user.email,
     city: user.city || '',
     level: Number(user.level ?? 1),
@@ -119,7 +136,7 @@ const normalizeRoomPlayer = (player = {}) => {
   return normalizeUser({
     id: player.user_id || player.id,
     username,
-    name: titleCase(username),
+    name: displayNameFromUsername(username),
     team: player.team || 'spectator',
     role,
     status: 'online',

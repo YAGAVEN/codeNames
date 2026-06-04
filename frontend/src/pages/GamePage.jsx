@@ -23,7 +23,7 @@ const GamePage = () => {
   const navigate = useNavigate();
   const { soundEnabled, setSoundEnabled } = useAuth();
   const { board, score, currentTurn, clue, players, timerSeconds, roomSettings, setTimer, winner } = useGame();
-  const { emit, setRoomCode } = useSocket();
+  const { emit, lastEvent, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [chatOpen, setChatOpen] = useState(false);
 
@@ -44,10 +44,20 @@ const GamePage = () => {
     }
   }, [showToast, winner]);
 
-  const handleReveal = (cardId) => {
+  useEffect(() => {
+    if (lastEvent?.event === SOCKET_EVENTS.ERROR_MESSAGE) {
+      showToast({
+        type: 'error',
+        title: 'Game error',
+        message: lastEvent.message || 'That move could not be played.'
+      });
+    }
+  }, [lastEvent, showToast]);
+
+  const handleReveal = async (cardId) => {
     try {
       // card_index is the numeric index extracted from boardId by socket.js
-      emit(SOCKET_EVENTS.MAKE_GUESS, { cardId });
+      await emit(SOCKET_EVENTS.MAKE_GUESS, { cardId });
     } catch (error) {
       showToast({ type: 'error', title: 'Guess failed', message: error.message });
     }

@@ -23,7 +23,7 @@ const LobbyPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { players, readyPlayers, roomSettings, room, gameStarted, toggleReady, startGame, setRoomState } = useGame();
-  const { emit, connected, setRoomCode } = useSocket();
+  const { emit, connected, lastEvent, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('Teams');
 
@@ -56,6 +56,16 @@ const LobbyPage = () => {
     }
   }, [gameStarted, navigate, roomCode]);
 
+  useEffect(() => {
+    if (lastEvent?.event === SOCKET_EVENTS.ERROR_MESSAGE) {
+      showToast({
+        type: 'error',
+        title: 'Game error',
+        message: lastEvent.message || 'Something went wrong in the room.'
+      });
+    }
+  }, [lastEvent, showToast]);
+
   // ── Register the room code with the socket context ────────────────────────
   useEffect(() => {
     setRoomCode(roomCode || '');
@@ -81,7 +91,7 @@ const LobbyPage = () => {
     };
   }, [roomCode, setRoomCode, setRoomState, showToast]);
 
-  const handleReady = () => {
+  const handleReady = async () => {
     if (!user?.id) {
       showToast({
         type: 'warning',
@@ -90,16 +100,17 @@ const LobbyPage = () => {
       });
       return;
     }
-    // Optimistic local toggle
+    const nextReady = !ready;
     toggleReady(user.id);
     try {
-      emit(SOCKET_EVENTS.PLAYER_READY, { is_ready: !ready });
+      await emit(SOCKET_EVENTS.PLAYER_READY, { is_ready: nextReady });
     } catch (error) {
+      toggleReady(user.id);
       showToast({ type: 'error', title: 'Ready update failed', message: error.message });
     }
   };
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (!isAdmin) {
       showToast({ type: 'error', title: 'Not authorised', message: 'Only the room admin can start the game.' });
       return;
@@ -109,13 +120,13 @@ const LobbyPage = () => {
     try {
       // Send start_game to server. The server will broadcast game_started to
       // all clients. The useEffect above will navigate everyone to /game/:roomCode.
-      emit(SOCKET_EVENTS.START_GAME, { roomCode, wordPack: roomSettings.wordPack || 'india' });
+      await emit(SOCKET_EVENTS.START_GAME, { roomCode, wordPack: roomSettings.wordPack || 'india' });
     } catch (error) {
       showToast({ type: 'error', title: 'Game start failed', message: error.message });
     }
   };
 
-  const handleJoinTeam = (team) => {
+  const handleJoinTeam = async (team) => {
     if (!user?.id) {
       showToast({ type: 'warning', title: 'Sign in first', message: 'Log in to join a team.' });
       return;
@@ -123,7 +134,7 @@ const LobbyPage = () => {
     try {
       // Emit change_team — the server will update the DB and broadcast team_changed
       // to all clients, which GameContext handles by calling UPSERT_PLAYER.
-      emit(SOCKET_EVENTS.CHANGE_TEAM, { team });
+      await emit(SOCKET_EVENTS.CHANGE_TEAM, { team });
     } catch (error) {
       showToast({ type: 'error', title: 'Team change failed', message: error.message });
     }

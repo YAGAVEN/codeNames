@@ -130,7 +130,7 @@ const toBackendMessage = (event, payload = {}) => {
       reaction: payload.emoji
     },
     [SOCKET_EVENTS.PLAYER_READY]: {
-      is_ready: Boolean(payload.ready)
+      is_ready: Boolean(payload.is_ready ?? payload.ready)
     }
   };
 

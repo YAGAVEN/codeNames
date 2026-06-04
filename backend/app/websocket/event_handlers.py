@@ -50,7 +50,19 @@ async def handle_event(context: EventContext, payload: dict[str, Any]) -> None:
     handler = HANDLERS.get(event.event)
     if handler is None:
         raise GameRuleError(f"Unsupported event '{event.event}'")
+    await _touch_room_activity(context)
     await handler(context, event.data)
+
+
+async def _touch_room_activity(context: EventContext) -> None:
+    """Persist recent room activity for cleanup decisions."""
+    room_id = await _room_uuid(context)
+    if room_id is None:
+        return
+    repo = RoomRepository(context.db)
+    touched = await repo.touch_activity(room_id)
+    if touched is not None:
+        await repo.commit()
 
 
 async def _membership(context: EventContext) -> tuple[Team, PlayerRole]:
@@ -276,7 +288,8 @@ async def start_game(context: EventContext, data: dict[str, Any]) -> None:
         raise GameRuleError("Invalid room")
 
     # ── Admin check ──────────────────────────────────────────────────────────
-    room = await RoomRepository(context.db).get(room_id)
+    room_repo = RoomRepository(context.db)
+    room = await room_repo.get(room_id)
     if room is None:
         raise GameRuleError("Room not found")
     if str(room.host_id) != context.user_id:
@@ -295,6 +308,9 @@ async def start_game(context: EventContext, data: dict[str, Any]) -> None:
         words = list(DEFAULT_WORDS)
 
     state = await GameManager().start_game(context.room_id, words, seed, pack_name)
+    room.status = RoomStatus.IN_PROGRESS
+    room.game_state = state
+    await room_repo.commit()
     public = _public_state(state)
     await context.manager.broadcast(context.room_id, "game_started", public)
     await context.manager.broadcast(context.room_id, "board_updated", {"board": public["board"], "scores": _score_payload(state)})

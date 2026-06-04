@@ -8,18 +8,31 @@ import { ClueInput } from '../components/game/ClueInput.jsx';
 import { Scoreboard } from '../components/game/Scoreboard.jsx';
 import { TeamPanel } from '../components/game/TeamPanel.jsx';
 import { WordGrid } from '../components/game/WordGrid.jsx';
+import { useToast } from '../components/ui/Toast.jsx';
 import { useGame } from '../hooks/useGame.js';
 import { useSocket } from '../hooks/useSocket.js';
+import { SOCKET_EVENTS } from '../services/socket.js';
 
 const SpymasterPage = () => {
   const { roomCode } = useParams();
   const { board, spymasterBoard, score, currentTurn, clue, players } = useGame();
-  const { setRoomCode } = useSocket();
+  const { lastEvent, setRoomCode } = useSocket();
+  const { showToast } = useToast();
   const visibleBoard = spymasterBoard.length ? spymasterBoard : board;
 
   useEffect(() => {
     setRoomCode(roomCode || '');
   }, [roomCode, setRoomCode]);
+
+  useEffect(() => {
+    if (lastEvent?.event === SOCKET_EVENTS.ERROR_MESSAGE) {
+      showToast({
+        type: 'error',
+        title: 'Game error',
+        message: lastEvent.message || 'That clue could not be played.'
+      });
+    }
+  }, [lastEvent, showToast]);
 
   return (
     <div className="space-y-4">

@@ -8,7 +8,8 @@ from app.db.models.room import Room
 from app.db.models.room_player import RoomPlayer
 from app.db.models.user import User
 from app.game.game_manager import GameManager
-from app.utils.constants import PlayerRole, Team
+from app.repositories.room_player_repository import RoomPlayerRepository
+from app.utils.constants import PlayerRole, RoomStatus, Team
 from app.websocket.event_handlers import EventContext, handle_event
 from app.websocket.room_events import websocket_endpoint
 
@@ -79,7 +80,39 @@ async def test_websocket_join_start_clue_guess_flow(db_session) -> None:
     )
     await handle_event(context, {"event": "join_room", "data": {}})
     await handle_event(context, {"event": "start_game", "data": {"word_pack": "cities", "seed": "ws-seed"}})
+    room = await db_session.get(Room, room_id)
+    assert room is not None
+    await db_session.refresh(room)
+    assert room.status == RoomStatus.IN_PROGRESS
     await handle_event(context, {"event": "give_clue", "data": {"word": "travel", "number": 1}})
     state = await GameManager().load_state(room_code)
     assert state["current_clue"]["word"] == "travel"
     assert any(event[1] == "game_started" for event in manager.events)
+
+
+@pytest.mark.asyncio
+async def test_ready_up_marks_membership_ready(db_session) -> None:
+    """ready_up should persist the requested ready state and broadcast it."""
+    user_id = uuid4()
+    room_id = uuid4()
+    room_code = "READY1"
+    db_session.add(User(id=user_id, username="ready_user", email="ready@example.com"))
+    db_session.add(Room(id=room_id, room_code=room_code, host_id=user_id, max_players=8, settings={}, game_state={}))
+    db_session.add(RoomPlayer(room_id=room_id, user_id=user_id, team=Team.RED, role=PlayerRole.OPERATIVE))
+    await db_session.commit()
+
+    manager = RecordingManager()
+    context = EventContext(
+        room_id=room_code,
+        user_id=str(user_id),
+        manager=manager,  # type: ignore[arg-type]
+        db=db_session,
+        settings=get_settings(),
+    )
+
+    await handle_event(context, {"event": "ready_up", "data": {"is_ready": True}})
+
+    membership = await RoomPlayerRepository(db_session).get_membership(room_id, user_id)
+    assert membership is not None
+    assert membership.is_ready is True
+    assert any(event[1] == "player_joined" and event[2]["is_ready"] is True for event in manager.events)

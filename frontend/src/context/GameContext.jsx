@@ -42,6 +42,25 @@ const normalizeClue = (clue = {}) => ({
   from: clue.from || null
 });
 
+const stripGeneratedSuffix = (value = '') => String(value).replace(/_[a-f0-9]{6}$/i, '');
+
+const displayNameFromUsername = (value = '') =>
+  stripGeneratedSuffix(value)
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ') || 'Player';
+
+const displayHandleFromUsername = (value = '') => {
+  const username = stripGeneratedSuffix(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return username ? `@${username}` : '';
+};
+
 /**
  * Build a normalised player object from a WebSocket event payload.
  * Prefers `username` and `name` fields (set by the updated backend join_room handler)
@@ -54,15 +73,13 @@ const playerFromEvent = (payload = {}) => {
   }
 
   // The updated backend sends username and name in player_joined / team_changed events.
-  const displayName =
-    payload.name ||
-    payload.username ||
-    `Player ${id.slice(0, 6)}`;
+  const rawName = payload.name || payload.username || `Player ${id.slice(0, 6)}`;
+  const displayName = displayNameFromUsername(rawName);
 
   return {
     id,
     name: displayName,
-    handle: payload.username ? `@${payload.username}` : '',
+    handle: payload.username ? displayHandleFromUsername(payload.username) : '',
     team: payload.team || TEAM_TYPES.SPECTATOR,
     role:
       payload.role === 'spymaster'
