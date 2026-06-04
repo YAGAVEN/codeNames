@@ -23,7 +23,7 @@ alembic upgrade head
 
 The migration creates the public tables, RLS policies, and the `auth.users` trigger that keeps `public.users` in sync.
 The backend expects the asyncpg driver; plain `postgresql://` URLs are automatically upgraded to `postgresql+asyncpg://` at runtime.
-On IPv4-only hosts such as Render, prefer Supabase's session pooler connection string on port `5432` instead of the direct `db.<project>.supabase.co` host. If you must use Supabase's transaction pooler on port `6543`, the backend disables both asyncpg's statement cache and SQLAlchemy's asyncpg prepared-statement cache for that URL.
+On IPv4-only hosts such as Render, prefer Supabase's session pooler connection string on port `5432` instead of the direct `db.<project>.supabase.co` host. If you must use Supabase's transaction pooler on port `6543`, the backend disables both asyncpg's statement cache and SQLAlchemy's asyncpg prepared-statement cache, uses unique prepared-statement names, and skips SQLAlchemy's own connection pooling for that URL.
 
 ## Production (Render)
 

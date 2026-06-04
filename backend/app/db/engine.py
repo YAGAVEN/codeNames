@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import ssl
 from typing import Mapping
+from uuid import uuid4
 
 from sqlalchemy.engine import make_url
 
@@ -12,6 +13,7 @@ class EngineConfig:
 
     database_url: str
     connect_args: dict[str, object]
+    use_null_pool: bool = False
 
 
 def _ssl_required_from_query(query: Mapping[str, str | None]) -> bool:
@@ -44,6 +46,10 @@ def _is_supabase_transaction_pooler(host: str, port: int | None) -> bool:
     )
 
 
+def _prepared_statement_name() -> str:
+    return f"__asyncpg_{uuid4()}__"
+
+
 def build_engine_config(database_url: str) -> EngineConfig:
     """
     Return a sanitized URL and asyncpg connection arguments.
@@ -69,6 +75,7 @@ def build_engine_config(database_url: str) -> EngineConfig:
     host = url.host or ""
 
     connect_args: dict[str, object] = {}
+    use_null_pool = False
 
     if _is_supabase_host(host):
         ssl_required = True
@@ -79,7 +86,9 @@ def build_engine_config(database_url: str) -> EngineConfig:
         # - asyncpg's driver-level automatic statement cache
         # - SQLAlchemy's asyncpg prepared-statement cache
         connect_args["statement_cache_size"] = 0
+        connect_args["prepared_statement_name_func"] = _prepared_statement_name
         query["prepared_statement_cache_size"] = "0"
+        use_null_pool = True
 
     if ssl_required:
         ssl_context = ssl.create_default_context()
@@ -96,4 +105,5 @@ def build_engine_config(database_url: str) -> EngineConfig:
             hide_password=False
         ),
         connect_args=connect_args,
+        use_null_pool=use_null_pool,
     )

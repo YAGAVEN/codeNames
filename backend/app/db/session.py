@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 
+from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -36,7 +37,9 @@ if engine_config.connect_args:
         engine_config.connect_args
     )
 
-if not database_url.startswith("sqlite"):
+if engine_config.use_null_pool:
+    engine_kwargs["poolclass"] = pool.NullPool
+elif not database_url.startswith("sqlite"):
     engine_kwargs.update(
         {
             "pool_size": settings.DB_POOL_SIZE,
