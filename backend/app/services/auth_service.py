@@ -21,7 +21,7 @@ from app.core.security import (
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, RegisterRequest
 from app.utils.constants import UserRole
-from app.utils.exceptions import AuthenticationError, ConflictError, NotFoundError, ServiceUnavailableError
+from app.utils.exceptions import BadRequestError, AuthenticationError, ConflictError, NotFoundError, ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -170,17 +170,34 @@ class AuthService:
             if self.settings.is_production:
                 raise AuthenticationError("Supabase Auth is not configured")
             return None
-        result = await asyncio.to_thread(
-            client.auth.sign_up,
-            {
-                "email": str(payload.email),
-                "password": payload.password,
-                "options": {
-                    "data": {"username": payload.username},
-                    "email_redirect_to": f"{self.frontend_url}/login",
+        try:
+            result = await asyncio.to_thread(
+                client.auth.sign_up,
+                {
+                    "email": str(payload.email),
+                    "password": payload.password,
+                    "options": {
+                        "data": {"username": payload.username},
+                        "email_redirect_to": f"{self.frontend_url}/login",
+                    },
                 },
-            },
-        )
+            )
+        except AuthRetryableError as exc:
+            raise ServiceUnavailableError("Supabase Auth is temporarily unavailable") from exc
+        except AuthError as exc:
+            message = getattr(exc, "message", None)
+            if not message and exc.args:
+                message = str(exc.args[0])
+            if not message:
+                message = str(exc)
+            normalized = message.lower() if message else ""
+            if "already" in normalized and ("registered" in normalized or "exists" in normalized):
+                raise ConflictError("Username or email is already registered") from exc
+            logger.info(
+                "supabase_register_failed",
+                extra={"auth_error": getattr(exc, "name", type(exc).__name__)},
+            )
+            raise BadRequestError(message or "Unable to register with provided credentials") from exc
         user_id = getattr(getattr(result, "user", None), "id", None)
         return UUID(str(user_id)) if user_id else None
 

@@ -6,7 +6,6 @@ from typing import Mapping
 
 from sqlalchemy.engine import make_url
 
-
 @dataclass(frozen=True)
 class EngineConfig:
     """Resolved engine URL and connect arguments."""
@@ -28,13 +27,25 @@ def _ssl_required_from_query(query: Mapping[str, str | None]) -> bool:
 
 
 def _is_supabase_host(host: str) -> bool:
-    return host.endswith(".supabase.co") or host.endswith(".pooler.supabase.com")
+    return (
+        host.endswith(".supabase.co")
+        or host.endswith(".pooler.supabase.com")
+    )
 
 
 def build_engine_config(database_url: str) -> EngineConfig:
-    """Return a sanitized URL and asyncpg SSL config for the engine."""
+    """
+    Return a sanitized URL and asyncpg connection arguments.
+    Handles:
+    - SSL for Supabase
+    - PgBouncer compatibility
+    """
+
     if database_url.startswith("sqlite"):
-        return EngineConfig(database_url=database_url, connect_args={})
+        return EngineConfig(
+            database_url=database_url,
+            connect_args={}
+        )
 
     url = make_url(database_url)
     query = dict(url.query)
@@ -45,13 +56,18 @@ def build_engine_config(database_url: str) -> EngineConfig:
     query.pop("ssl", None)
 
     host = url.host or ""
-    if _is_supabase_host(host):
-        ssl_required = True
 
     connect_args: dict[str, object] = {}
 
+    if _is_supabase_host(host):
+        ssl_required = True
+
+        # Required for Supabase PgBouncer
+        connect_args["statement_cache_size"] = 0
+
     if ssl_required:
         ssl_context = ssl.create_default_context()
+
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
 
@@ -60,6 +76,8 @@ def build_engine_config(database_url: str) -> EngineConfig:
     sanitized_url = url.set(query=query)
 
     return EngineConfig(
-        database_url=sanitized_url.render_as_string(hide_password=False),
+        database_url=sanitized_url.render_as_string(
+            hide_password=False
+        ),
         connect_args=connect_args,
     )

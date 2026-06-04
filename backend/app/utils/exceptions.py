@@ -12,6 +12,13 @@ class AppError(Exception):
         super().__init__(message)
 
 
+class BadRequestError(AppError):
+    """Raised when a request cannot be processed due to client input."""
+
+    def __init__(self, message: str = "Bad request") -> None:
+        super().__init__(message, HTTPStatus.BAD_REQUEST, "bad_request")
+
+
 class AuthenticationError(AppError):
     """Raised when a request cannot be authenticated."""
 
