@@ -31,9 +31,6 @@ engine_kwargs: dict[str, object] = {
     "future": True,
 }
 
-if engine_config.engine_kwargs:
-    engine_kwargs.update(engine_config.engine_kwargs)
-
 if engine_config.connect_args:
     engine_kwargs["connect_args"] = (
         engine_config.connect_args

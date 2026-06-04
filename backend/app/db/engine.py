@@ -8,11 +8,10 @@ from sqlalchemy.engine import make_url
 
 @dataclass(frozen=True)
 class EngineConfig:
-    """Resolved engine URL and engine arguments."""
+    """Resolved engine URL and asyncpg connection arguments."""
 
     database_url: str
     connect_args: dict[str, object]
-    engine_kwargs: dict[str, object]
 
 
 def _ssl_required_from_query(query: Mapping[str, str | None]) -> bool:
@@ -50,7 +49,6 @@ def build_engine_config(database_url: str) -> EngineConfig:
         return EngineConfig(
             database_url=database_url,
             connect_args={},
-            engine_kwargs={},
         )
 
     url = make_url(database_url)
@@ -64,15 +62,14 @@ def build_engine_config(database_url: str) -> EngineConfig:
     host = url.host or ""
 
     connect_args: dict[str, object] = {}
-    engine_kwargs: dict[str, object] = {}
 
     if _is_supabase_host(host):
         ssl_required = True
 
     if _is_supabase_pooler_host(host):
         # Supabase PgBouncer (transaction pooling) is incompatible with prepared statements.
+        # statement_cache_size=0 disables prepared statement caching in asyncpg.
         connect_args["statement_cache_size"] = 0
-        engine_kwargs["prepared_statement_cache_size"] = 0
 
     if ssl_required:
         ssl_context = ssl.create_default_context()
@@ -89,5 +86,4 @@ def build_engine_config(database_url: str) -> EngineConfig:
             hide_password=False
         ),
         connect_args=connect_args,
-        engine_kwargs=engine_kwargs,
     )
