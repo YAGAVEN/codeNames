@@ -22,7 +22,7 @@ import { cn } from '../utils/helpers.js';
 const GamePage = () => {
   const { roomCode } = useParams();
   const { soundEnabled, setSoundEnabled, user } = useAuth();
-  const { board, score, currentTurn, clue, players, timerSeconds, roomSettings, setTimer, winner } = useGame();
+  const { board, score, currentTurn, clue, players, timerSeconds, roomSettings, setTimer, winner, clearGameStarted } = useGame();
   const { emit, lastEvent, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [chatOpen, setChatOpen] = useState(false);
@@ -63,6 +63,13 @@ const GamePage = () => {
   useEffect(() => {
     setRoomCode(roomCode || '');
   }, [roomCode, setRoomCode]);
+
+  // Clear the gameStarted flag now that we have navigated to the game page.
+  // This prevents the lobby from immediately re-redirecting if the user goes back.
+  useEffect(() => {
+    clearGameStarted();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (winner) {

@@ -98,7 +98,6 @@ const gameReducer = (state, action) => {
     case 'SET_ROOM_STATE': {
       const room = action.payload || {};
       const settings = room.settings || {};
-      const roomInGame = room.status === 'In Game' || room.status === 'in_progress';
       return {
         ...state,
         room,
@@ -106,7 +105,10 @@ const gameReducer = (state, action) => {
         readyPlayers: room.readyPlayers || state.readyPlayers,
         roomSettings: { ...state.roomSettings, ...settings },
         timerSeconds: Number(settings.timerLength || state.timerSeconds),
-        gameStarted: roomInGame ? state.gameStarted : false
+        // Never reset gameStarted to false from a REST snapshot — once the
+        // WebSocket has confirmed the game started, a stale REST response
+        // (which may still say 'waiting') must not cancel the navigation.
+        gameStarted: state.gameStarted
       };
     }
     case 'SET_BOARD':
@@ -243,8 +245,11 @@ const gameReducer = (state, action) => {
     case 'GAME_STARTED_FROM_SERVER':
       return {
         ...state,
-        gameStarted: true
+        gameStarted: true,
+        winner: null
       };
+    case 'CLEAR_GAME_STARTED':
+      return { ...state, gameStarted: false };
     case 'SET_TIMER':
       return { ...state, timerSeconds: action.payload };
     default:
@@ -260,8 +265,17 @@ export const GameProvider = ({ children }) => {
 
   useEffect(() => {
     if (!eventQueue.length) {
+      // Reset the cursor when the queue empties — this happens on socket
+      // disconnect/reconnect when SocketContext clears the queue. It is safe
+      // because the next fill will start from sequence 1 again.
       processedEventSequenceRef.current = 0;
       return;
+    }
+
+    // Detect a fresh queue from a reconnect: if the earliest event has
+    // sequence 1 but our cursor is ahead, the queue was reset externally.
+    if (eventQueue[0].sequence === 1 && processedEventSequenceRef.current > 0) {
+      processedEventSequenceRef.current = 0;
     }
 
     const pendingEvents = eventQueue.filter((event) => event.sequence > processedEventSequenceRef.current);
@@ -372,6 +386,7 @@ export const GameProvider = ({ children }) => {
       toggleReady: (playerId) => dispatch({ type: 'TOGGLE_READY', payload: playerId }),
       updateRoomSettings: (settings) => dispatch({ type: 'UPDATE_ROOM_SETTINGS', payload: settings }),
       startGame: () => dispatch({ type: 'START_GAME' }),
+      clearGameStarted: () => dispatch({ type: 'CLEAR_GAME_STARTED' }),
       setTimer: (seconds) => dispatch({ type: 'SET_TIMER', payload: seconds })
     }),
     [setRoomState, state]
