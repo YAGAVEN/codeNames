@@ -263,6 +263,55 @@ async def change_team(context: EventContext, data: dict[str, Any]) -> None:
     )
 
 
+@websocket_handler("change_role")
+async def change_role(context: EventContext, data: dict[str, Any]) -> None:
+    """Allow a player to switch between Spymaster and Operative before the game starts.
+
+    Only one Spymaster is allowed per team — selecting Spymaster demotes the
+    existing spymaster (if any) on that team to Operative.
+    """
+    room_id = await _room_uuid(context)
+    user_id = _user_uuid(context.user_id)
+    if room_id is None or user_id is None:
+        raise GameRuleError("Invalid room or user")
+
+    raw_role = str(data.get("role", "")).lower()
+    try:
+        new_role = PlayerRole(raw_role)
+    except ValueError:
+        raise GameRuleError(f"Invalid role '{raw_role}'. Must be 'spymaster' or 'operative'")
+
+    room_repo = RoomRepository(context.db)
+    room = await room_repo.get(room_id)
+    if room is None:
+        raise GameRuleError("Room not found")
+    if room.status != RoomStatus.WAITING:
+        raise GameRuleError("Role changes are not allowed once the game has started")
+
+    player_repo = RoomPlayerRepository(context.db)
+    membership = await player_repo.set_role(room_id, user_id, new_role)
+    if membership is None:
+        raise GameRuleError("You are not a member of this room")
+    await player_repo.commit()
+
+    # Fetch all memberships so any demoted spymaster is also broadcast
+    rows = await player_repo.list_by_room(room_id)
+    user_repo = UserRepository(context.db)
+    for m, u in rows:
+        if u is not None:
+            await context.manager.broadcast(
+                context.room_id,
+                "team_changed",
+                {
+                    "user_id": str(m.user_id),
+                    "username": u.username or f"Player {str(m.user_id)[:6]}",
+                    "name": u.username or f"Player {str(m.user_id)[:6]}",
+                    "team": m.team.value,
+                    "role": m.role.value,
+                },
+            )
+
+
 @websocket_handler("ready_up")
 async def ready_up(context: EventContext, data: dict[str, Any]) -> None:
     """Mark a player ready in the database."""

@@ -56,16 +56,31 @@ export const RoomSettings = ({ isAdmin = false }) => {
             Timer length
           </span>
           <input
-            aria-label="Timer length in seconds"
+            aria-label="Timer length slider"
             type="range"
-            min="30"
-            max="120"
-            step="15"
+            min="15"
+            max="180"
+            step="5"
             value={roomSettings.timerLength}
             onChange={(event) => updateRoomSettings({ timerLength: Number(event.target.value) })}
             className="w-full accent-saffron"
           />
-          <Badge tone="saffron">{roomSettings.timerLength}s</Badge>
+          <div className="flex items-center gap-2">
+            <input
+              aria-label="Timer length in seconds"
+              type="number"
+              min="15"
+              max="180"
+              value={roomSettings.timerLength}
+              onChange={(event) => updateRoomSettings({ timerLength: Number(event.target.value) })}
+              onBlur={(event) => {
+                const clamped = Math.max(15, Math.min(180, Number(event.target.value) || 60));
+                updateRoomSettings({ timerLength: clamped });
+              }}
+              className="w-20 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-center text-cream outline-none focus:border-saffron/60 light:text-slate-900"
+            />
+            <span className="text-sm text-cream/50">seconds</span>
+          </div>
         </label>
 
         <label className="space-y-2">

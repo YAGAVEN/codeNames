@@ -1,7 +1,7 @@
 // /media/yagaven_25/coding/Projects/codeNames/src/pages/GamePage.jsx
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Eye, MessageCircle, Volume2, VolumeX } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { Crown, Eye, MessageCircle, Volume2, VolumeX, Zap } from 'lucide-react';
 import { Button } from '../components/ui/Button.jsx';
 import { Badge } from '../components/ui/Badge.jsx';
 import { Modal } from '../components/ui/Modal.jsx';
@@ -17,20 +17,49 @@ import { useAuth } from '../hooks/useAuth.js';
 import { useGame } from '../hooks/useGame.js';
 import { useSocket } from '../hooks/useSocket.js';
 import { SOCKET_EVENTS } from '../services/socket.js';
+import { cn } from '../utils/helpers.js';
 
 const GamePage = () => {
   const { roomCode } = useParams();
-  const navigate = useNavigate();
   const { soundEnabled, setSoundEnabled, user } = useAuth();
   const { board, score, currentTurn, clue, players, timerSeconds, roomSettings, setTimer, winner } = useGame();
   const { emit, lastEvent, setRoomCode } = useSocket();
   const { showToast } = useToast();
   const [chatOpen, setChatOpen] = useState(false);
-  const currentPlayer = useMemo(() => players.find((player) => player.id === user?.id) || null, [players, user?.id]);
+
+  /** The authenticated user's record inside the room's player list. */
+  const currentPlayer = useMemo(
+    () => players.find((player) => String(player.id) === String(user?.id)) || null,
+    [players, user?.id]
+  );
+
+  const isSpymaster = currentPlayer?.role === 'Spymaster';
+  const isCurrentTeam = currentPlayer?.team === currentTurn;
+
+  /**
+   * Action banner text describing who should do what right now.
+   * e.g. "🔴 Red Spymaster — Give your clue!"  or  "🔵 Blue Operatives — Choose a card!"
+   */
+  const actionBanner = useMemo(() => {
+    if (winner) return null;
+    const teamLabel = currentTurn === 'red' ? '🔴 Red' : '🔵 Blue';
+    const hasClue = Boolean(clue?.word);
+
+    if (!hasClue) {
+      return {
+        text: `${teamLabel} Spymaster — Give your clue now!`,
+        tone: currentTurn,
+        icon: Crown
+      };
+    }
+    return {
+      text: `${teamLabel} Field Operatives — Choose a card!`,
+      tone: currentTurn,
+      icon: Zap
+    };
+  }, [winner, currentTurn, clue]);
 
   // Register room code so the socket connects to the correct room.
-  // This covers players who navigate directly to /game/:roomCode (e.g. late joins,
-  // page refresh) — the socket will send join_room on open.
   useEffect(() => {
     setRoomCode(roomCode || '');
   }, [roomCode, setRoomCode]);
@@ -60,21 +89,24 @@ const GamePage = () => {
       showToast({ type: 'warning', title: 'Join the room', message: 'Only room players can choose cards.' });
       return;
     }
-    if (currentPlayer.role !== 'Operative') {
-      showToast({ type: 'warning', title: 'Spymaster turn', message: 'Spymasters give clues; operatives choose cards.' });
+    if (isSpymaster) {
+      showToast({ type: 'warning', title: 'Spymasters watch', message: 'Only Field Operatives can choose cards.' });
       return;
     }
-    if (currentPlayer.team !== currentTurn) {
-      showToast({ type: 'warning', title: 'Wait your turn', message: `${currentTurn === 'red' ? 'Red' : 'Blue'} team is choosing now.` });
+    if (!isCurrentTeam) {
+      showToast({
+        type: 'warning',
+        title: 'Wait your turn',
+        message: `${currentTurn === 'red' ? '🔴 Red' : '🔵 Blue'} team is choosing now.`
+      });
       return;
     }
     if (!clue?.word) {
-      showToast({ type: 'warning', title: 'Awaiting clue', message: 'Cards can be chosen after the spymaster clue.' });
+      showToast({ type: 'warning', title: 'Awaiting clue', message: 'Wait for your Spymaster to give a clue first.' });
       return;
     }
 
     try {
-      // card_index is the numeric index extracted from boardId by socket.js
       await emit(SOCKET_EVENTS.MAKE_GUESS, { cardId });
     } catch (error) {
       showToast({ type: 'error', title: 'Guess failed', message: error.message });
@@ -106,6 +138,37 @@ const GamePage = () => {
           </Button>
         </div>
       </section>
+
+      {/* ── Action banner ───────────────────────────────────────────────────── */}
+      {actionBanner ? (
+        <div
+          className={cn(
+            'flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold',
+            actionBanner.tone === 'red'
+              ? 'border-red-400/40 bg-red-500/15 text-red-100'
+              : 'border-blue-400/40 bg-blue-500/15 text-blue-100'
+          )}
+          role="status"
+          aria-live="polite"
+        >
+          <actionBanner.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{actionBanner.text}</span>
+          {currentPlayer ? (
+            <span
+              className={cn(
+                'ml-auto rounded-full px-2 py-0.5 text-xs font-bold',
+                isCurrentTeam
+                  ? isSpymaster
+                    ? 'bg-saffron/20 text-saffron'
+                    : 'bg-emerald-500/20 text-emerald-300'
+                  : 'bg-white/10 text-cream/50'
+              )}
+            >
+              You: {isSpymaster ? 'Spymaster' : 'Operative'} · {currentPlayer.team === 'red' ? '🔴 Red' : currentPlayer.team === 'blue' ? '🔵 Blue' : 'Spectator'}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[18rem_1fr_23rem]">
         <aside className="space-y-4">

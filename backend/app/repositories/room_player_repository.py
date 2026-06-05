@@ -56,18 +56,28 @@ class RoomPlayerRepository(BaseRepository[RoomPlayer]):
         return membership
 
     async def set_team(self, room_id: UUID, user_id: UUID, team: Team) -> RoomPlayer | None:
-        """Change a player's team assignment. Auto-assigns Spymaster if none on the new team."""
+        """Change a player's team assignment. Players join as Operative by default."""
         membership = await self.get_membership(room_id, user_id)
         if membership is None:
             return None
         membership.team = team
-        # Determine role: first on the team becomes Spymaster
-        rows = await self.list_by_room(room_id)
-        has_spymaster = any(
-            m.team == team and m.role == PlayerRole.SPYMASTER and m.user_id != user_id
-            for m, _ in rows
-        )
-        membership.role = PlayerRole.OPERATIVE if has_spymaster else PlayerRole.SPYMASTER
+        # Players always join as Operative — they can self-select Spymaster via change_role
+        membership.role = PlayerRole.OPERATIVE
+        await self.session.flush()
+        return membership
+
+    async def set_role(self, room_id: UUID, user_id: UUID, role: PlayerRole) -> RoomPlayer | None:
+        """Change a player's role. Ensures at most one Spymaster per team."""
+        membership = await self.get_membership(room_id, user_id)
+        if membership is None:
+            return None
+        if role == PlayerRole.SPYMASTER:
+            # Demote any existing spymaster on the same team to Operative
+            rows = await self.list_by_room(room_id)
+            for m, _ in rows:
+                if m.team == membership.team and m.role == PlayerRole.SPYMASTER and m.user_id != user_id:
+                    m.role = PlayerRole.OPERATIVE
+        membership.role = role
         await self.session.flush()
         return membership
 

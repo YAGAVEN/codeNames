@@ -12,6 +12,7 @@ export const SOCKET_EVENTS = {
   JOIN_ROOM: 'join-room',
   LEAVE_ROOM: 'leave-room',
   CHANGE_TEAM: 'change-team',
+  CHANGE_ROLE: 'change-role',
   GIVE_CLUE: 'give-clue',
   MAKE_GUESS: 'make-guess',
   START_GAME: 'start-game',
@@ -49,6 +50,7 @@ const backendEvents = {
   [SOCKET_EVENTS.JOIN_ROOM]: 'join_room',
   [SOCKET_EVENTS.LEAVE_ROOM]: 'leave_room',
   [SOCKET_EVENTS.CHANGE_TEAM]: 'change_team',
+  [SOCKET_EVENTS.CHANGE_ROLE]: 'change_role',
   [SOCKET_EVENTS.GIVE_CLUE]: 'give_clue',
   [SOCKET_EVENTS.MAKE_GUESS]: 'select_card',
   [SOCKET_EVENTS.START_GAME]: 'start_game',
@@ -111,6 +113,9 @@ const toBackendMessage = (event, payload = {}) => {
     [SOCKET_EVENTS.LEAVE_ROOM]: {},
     [SOCKET_EVENTS.CHANGE_TEAM]: {
       team: payload.team || 'spectator'
+    },
+    [SOCKET_EVENTS.CHANGE_ROLE]: {
+      role: payload.role || 'operative'
     },
     [SOCKET_EVENTS.GIVE_CLUE]: {
       word: payload.clue?.word || payload.word,

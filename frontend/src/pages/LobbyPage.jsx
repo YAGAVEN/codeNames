@@ -145,6 +145,18 @@ const LobbyPage = () => {
     }
   };
 
+  const handleChangeRole = async (role) => {
+    if (!user?.id) {
+      showToast({ type: 'warning', title: 'Sign in first', message: 'Log in to change your role.' });
+      return;
+    }
+    try {
+      await emit(SOCKET_EVENTS.CHANGE_ROLE, { role });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Role change failed', message: error.message });
+    }
+  };
+
   const handleDragEnd = (_, info) => {
     if (Math.abs(info.offset.x) < 70) {
       return;
@@ -212,8 +224,8 @@ const LobbyPage = () => {
           <motion.div drag="x" dragConstraints={{ left: 0, right: 0 }} onDragEnd={handleDragEnd} className="md:hidden">
             {activeTab === 'Teams' ? (
               <div className="grid gap-4">
-                <TeamSlot team="red" players={grouped.red} readyPlayers={readyPlayers} maxPlayers={roomSettings.maxTeamSize} onJoin={handleJoinTeam} />
-                <TeamSlot team="blue" players={grouped.blue} readyPlayers={readyPlayers} maxPlayers={roomSettings.maxTeamSize} onJoin={handleJoinTeam} />
+                <TeamSlot team="red" players={grouped.red} readyPlayers={readyPlayers} maxPlayers={roomSettings.maxTeamSize} onJoin={handleJoinTeam} onChangeRole={handleChangeRole} currentUserId={user?.id} />
+                <TeamSlot team="blue" players={grouped.blue} readyPlayers={readyPlayers} maxPlayers={roomSettings.maxTeamSize} onJoin={handleJoinTeam} onChangeRole={handleChangeRole} currentUserId={user?.id} />
               </div>
             ) : null}
             {activeTab === 'Chat' ? <ChatPanel /> : null}
@@ -221,13 +233,14 @@ const LobbyPage = () => {
           </motion.div>
 
           <div className="hidden gap-4 md:grid lg:grid-cols-2">
-            <TeamSlot team="red" players={grouped.red} readyPlayers={readyPlayers} maxPlayers={roomSettings.maxTeamSize} onJoin={handleJoinTeam} />
-            <TeamSlot team="blue" players={grouped.blue} readyPlayers={readyPlayers} maxPlayers={roomSettings.maxTeamSize} onJoin={handleJoinTeam} />
+            <TeamSlot team="red" players={grouped.red} readyPlayers={readyPlayers} maxPlayers={roomSettings.maxTeamSize} onJoin={handleJoinTeam} onChangeRole={handleChangeRole} currentUserId={user?.id} />
+            <TeamSlot team="blue" players={grouped.blue} readyPlayers={readyPlayers} maxPlayers={roomSettings.maxTeamSize} onJoin={handleJoinTeam} onChangeRole={handleChangeRole} currentUserId={user?.id} />
           </div>
           <div className="hidden md:block">
             <RoomSettings isAdmin={isAdmin} />
           </div>
         </div>
+
 
         <aside className="space-y-5">
           <InvitePanel roomCode={roomCode} />
